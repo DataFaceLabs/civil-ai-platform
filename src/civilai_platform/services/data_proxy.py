@@ -56,3 +56,16 @@ class DataProxyClient:
 
     def run_determinations(self, entity_id: str) -> dict[str, Any]:
         return self.request("GET", f"/v1/entities/{entity_id}/determinations")
+
+    def resolve_parcel(
+        self, *, address: str | None = None, parcel_id: str | None = None
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if address:
+            body["address"] = address
+        if parcel_id:
+            body["parcel_id"] = parcel_id
+        return self.request("POST", "/v1/entities/resolve", json=body)
+
+    def get_site(self, entity_id: str) -> dict[str, Any]:
+        return self.request("GET", f"/v1/fe/site/by-entity/{entity_id}")
