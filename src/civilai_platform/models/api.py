@@ -18,6 +18,7 @@ from civilai_platform.models.entities import (
     TenantMembership,
     TenantStatus,
     UserProfile,
+    VerificationStep,
 )
 
 
@@ -186,6 +187,7 @@ class ProjectStatePatch(BaseModel):
     client_notes: list[ClientNote] | None = None
     references: list[dict] | None = None
     feasibility_document: FeasibilityDocumentRef | None = None
+    verification_steps: list[VerificationStep] | None = None
 
 
 class ProjectStateResponse(BaseModel):
@@ -201,11 +203,66 @@ class ProjectStateResponse(BaseModel):
     client_notes: list[ClientNote]
     references: list[dict]
     feasibility_document: FeasibilityDocumentRef | None
+    verification_steps: list[VerificationStep]
     updated_at: datetime
 
     @classmethod
     def from_entity(cls, s: ProjectState) -> "ProjectStateResponse":
         return cls(**s.model_dump())
+
+
+class AgentRunCreate(BaseModel):
+    request: str = Field(min_length=1)
+    entity_id: str | None = None
+    active_section_id: str | None = None
+    workflow: str | None = None
+    field_context: dict[str, str] = Field(default_factory=dict)
+    proposed_use: str | None = None
+
+
+class AgentRunResponse(BaseModel):
+    run_id: str
+    tenant_id: str
+    project_id: str
+    status: str
+    workflow: str | None
+    request: str
+    entity_id: str | None
+    active_section_id: str | None
+    message: str | None
+    artifacts: list[dict]
+    trace_summary: dict
+    guardrail_warnings: list[str]
+    error: str | None
+    s3_prefix: str | None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None
+
+    @classmethod
+    def from_entity(cls, run: "AgentRun") -> "AgentRunResponse":
+        from civilai_platform.models.entities import AgentRun
+
+        assert isinstance(run, AgentRun)
+        return cls(
+            run_id=run.run_id,
+            tenant_id=run.tenant_id,
+            project_id=run.project_id,
+            status=run.status.value,
+            workflow=run.workflow,
+            request=run.request,
+            entity_id=run.entity_id,
+            active_section_id=run.active_section_id,
+            message=run.message,
+            artifacts=run.artifacts,
+            trace_summary=run.trace_summary,
+            guardrail_warnings=run.guardrail_warnings,
+            error=run.error,
+            s3_prefix=run.s3_prefix,
+            created_at=run.created_at,
+            updated_at=run.updated_at,
+            completed_at=run.completed_at,
+        )
 
 
 class ArtifactPresignRequest(BaseModel):

@@ -6,6 +6,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from civilai_platform.models.entities import (
+    AgentRun,
     AuditEvent,
     Client,
     Project,
@@ -18,6 +19,7 @@ from civilai_platform.settings import get_settings
 from civilai_platform.store.base import PlatformStore
 from civilai_platform.store.keys import (
     ENTITY_TYPE,
+    agent_run_sk,
     client_sk,
     gsi1_pk_user,
     gsi1_sk_tenant,
@@ -258,3 +260,33 @@ class DynamoDBStore(PlatformStore):
             self._put(user_pk(user_id), "PLATFORM_ADMIN", "PlatformAdmin", {"user_id": user_id})
         else:
             self._delete(user_pk(user_id), "PLATFORM_ADMIN")
+
+    def put_agent_run(self, run: AgentRun) -> None:
+        self._put(
+            tenant_pk(run.tenant_id),
+            agent_run_sk(run.run_id),
+            "AgentRun",
+            run.model_dump(),
+        )
+
+    def get_agent_run(self, tenant_id: str, project_id: str, run_id: str) -> AgentRun | None:
+        item = self._get(tenant_pk(tenant_id), agent_run_sk(run_id))
+        if not item:
+            return None
+        run = AgentRun.model_validate(json.loads(item["payload"]))
+        if run.project_id != project_id:
+            return None
+        return run
+
+    def list_agent_runs(self, tenant_id: str, project_id: str, limit: int = 50) -> list[AgentRun]:
+        resp = self._table.query(
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :prefix)",
+            ExpressionAttributeValues={
+                ":pk": tenant_pk(tenant_id),
+                ":prefix": "AGENT_RUN#",
+            },
+            ScanIndexForward=False,
+            Limit=limit,
+        )
+        runs = [AgentRun.model_validate(json.loads(i["payload"])) for i in resp.get("Items", [])]
+        return [r for r in runs if r.project_id == project_id]

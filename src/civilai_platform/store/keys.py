@@ -46,4 +46,12 @@ def gsi2_sk_audit(iso_ts: str, event_id: str) -> str:
     return f"AUDIT#{iso_ts}#{event_id}"
 
 
+def agent_run_sk(run_id: str) -> str:
+    return f"AGENT_RUN#{run_id}"
+
+
+def agent_run_s3_prefix(tenant_id: str, project_id: str, run_id: str) -> str:
+    return f"tenant/{tenant_id}/project/{project_id}/agent-runs/{run_id}/"
+
+
 ENTITY_TYPE = "entityType"

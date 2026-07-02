@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from civilai_platform.models.entities import (
+    AgentRun,
     AuditEvent,
     Client,
     Project,
@@ -22,6 +23,7 @@ class MemoryStore(PlatformStore):
         self._states: dict[tuple[str, str], ProjectState] = {}
         self._audit: list[AuditEvent] = []
         self._platform_admins: set[str] = set()
+        self._agent_runs: dict[tuple[str, str, str], AgentRun] = {}
 
     def put_tenant(self, tenant: Tenant) -> None:
         self._tenants[tenant.tenant_id] = tenant
@@ -107,3 +109,18 @@ class MemoryStore(PlatformStore):
             self._platform_admins.add(user_id)
         else:
             self._platform_admins.discard(user_id)
+
+    def put_agent_run(self, run: AgentRun) -> None:
+        self._agent_runs[(run.tenant_id, run.project_id, run.run_id)] = run
+
+    def get_agent_run(self, tenant_id: str, project_id: str, run_id: str) -> AgentRun | None:
+        return self._agent_runs.get((tenant_id, project_id, run_id))
+
+    def list_agent_runs(self, tenant_id: str, project_id: str, limit: int = 50) -> list[AgentRun]:
+        runs = [
+            r
+            for (tid, pid, _), r in self._agent_runs.items()
+            if tid == tenant_id and pid == project_id
+        ]
+        runs.sort(key=lambda r: r.created_at, reverse=True)
+        return runs[:limit]

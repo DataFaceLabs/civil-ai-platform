@@ -38,6 +38,14 @@ class ProjectStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class AgentRunStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 ROLE_RANK: dict[Role, int] = {
     Role.PLATFORM_ADMIN: 100,
     Role.ADMIN: 80,
@@ -159,6 +167,13 @@ class FeasibilityDocumentRef(BaseModel):
     html_s3_key: str | None = None
 
 
+class VerificationStep(BaseModel):
+    id: str
+    text: str
+    checked: bool = False
+    step_key: str
+
+
 class ProjectState(BaseModel):
     project_id: str
     tenant_id: str
@@ -172,6 +187,7 @@ class ProjectState(BaseModel):
     client_notes: list[ClientNote] = Field(default_factory=list)
     references: list[dict[str, Any]] = Field(default_factory=list)
     feasibility_document: FeasibilityDocumentRef | None = None
+    verification_steps: list[VerificationStep] = Field(default_factory=list)
     updated_at: datetime
 
 
@@ -184,3 +200,24 @@ class AuditEvent(BaseModel):
     resource_id: str
     detail: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+
+
+class AgentRun(BaseModel):
+    run_id: str
+    tenant_id: str
+    project_id: str
+    actor_user_id: str
+    status: AgentRunStatus = AgentRunStatus.QUEUED
+    workflow: str | None = None
+    request: str
+    entity_id: str | None = None
+    active_section_id: str | None = None
+    message: str | None = None
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    trace_summary: dict[str, Any] = Field(default_factory=dict)
+    guardrail_warnings: list[str] = Field(default_factory=list)
+    error: str | None = None
+    s3_prefix: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None

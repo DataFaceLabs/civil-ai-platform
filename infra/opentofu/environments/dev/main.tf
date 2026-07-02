@@ -54,6 +54,34 @@ module "observability" {
   lambda_function_name = "civilai-dev-api"
 }
 
+module "bedrock" {
+  source      = "../../modules/bedrock"
+  environment = "dev"
+  aws_region  = var.aws_region
+}
+
+module "agentcore" {
+  source          = "../../modules/agentcore"
+  environment     = "dev"
+  aws_region      = var.aws_region
+  lambda_role_arn = module.api.lambda_role_arn
+  app_bucket_arn  = module.s3.bucket_arn
+  data_api_base_url = "http://localhost:8000"
+}
+
+module "agentcore_memory" {
+  source      = "../../modules/agentcore-memory"
+  environment = "dev"
+}
+
+output "bedrock_invoke_policy_arn" {
+  value = module.bedrock.bedrock_invoke_policy_arn
+}
+
+output "agentcore_runtime_policy_arn" {
+  value = module.agentcore.agentcore_runtime_policy_arn
+}
+
 output "api_endpoint" {
   value = module.api.api_endpoint
 }

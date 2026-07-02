@@ -206,3 +206,7 @@ output "api_endpoint" {
 output "lambda_arn" {
   value = aws_lambda_function.api.arn
 }
+
+output "lambda_role_arn" {
+  value = aws_iam_role.lambda.arn
+}

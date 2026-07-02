@@ -50,6 +50,16 @@ class Settings(BaseSettings):
         description="Accept X-Dev-User-Id / X-Dev-Tenant-Id headers when true",
     )
 
+    # Data API proxy (Pillar F)
+    data_api_base: str = Field(default="http://localhost:8000")
+    data_service_key: str | None = None
+
+    # Agent runtime
+    agent_dry_run: bool = Field(
+        default=True,
+        description="When true, Strands agent returns dry-run responses without Bedrock.",
+    )
+
     # CORS
     cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"]

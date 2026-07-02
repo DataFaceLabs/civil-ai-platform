@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 
 from civilai_platform.models.entities import (
+    AgentRun,
     AuditEvent,
     Client,
     Project,
@@ -98,3 +99,13 @@ class PlatformStore(ABC):
 
     @abstractmethod
     def set_platform_admin(self, user_id: str, is_admin: bool) -> None: ...
+
+    # --- Agent runs ---
+    @abstractmethod
+    def put_agent_run(self, run: AgentRun) -> None: ...
+
+    @abstractmethod
+    def get_agent_run(self, tenant_id: str, project_id: str, run_id: str) -> AgentRun | None: ...
+
+    @abstractmethod
+    def list_agent_runs(self, tenant_id: str, project_id: str, limit: int = 50) -> list[AgentRun]: ...
