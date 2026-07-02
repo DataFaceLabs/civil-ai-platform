@@ -10,7 +10,7 @@ include_pii=False (the DataProxyClient default). Revisit once Cognito auth is li
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from civilai_platform.api.deps import tenant_ctx
@@ -61,16 +61,7 @@ def site_by_entity(
     _ctx: Annotated[AuthContext, Depends(_viewer_ctx)],
     client: Annotated[DataProxyClient, Depends(get_data_proxy)],
 ) -> dict[str, Any]:
-    # civil-ai-data does not yet expose GET /v1/fe/site/by-entity/{entity_id}
-    # (companion PR pending). Fail loudly instead of forwarding to a route that
-    # doesn't exist on the other side.
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            "civil-ai-data GET /v1/fe/site/by-entity/{entity_id} is not available yet; "
-            "this route will proxy once that backend route ships."
-        ),
-    )
+    return client.get_site(entity_id)
 
 
 @router.get("/entities/{entity_id}/determinations")

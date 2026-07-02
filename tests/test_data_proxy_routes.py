@@ -100,13 +100,18 @@ def test_section_facts_requires_authentication(client: TestClient) -> None:
     assert res.status_code == 401
 
 
-def test_site_by_entity_returns_501_until_backend_route_exists(client: TestClient) -> None:
+@respx.mock
+def test_site_by_entity_happy_path(client: TestClient) -> None:
     tenant_id = _bootstrap(client, "user-a")
+    respx.get("http://data.test/v1/fe/site/by-entity/ent-1").mock(
+        return_value=httpx.Response(200, json={"parcel": [], "zoning": []})
+    )
     res = client.get(
         "/v1/data-proxy/fe/site/by-entity/ent-1",
         headers=_headers("user-a", tenant_id),
     )
-    assert res.status_code == 501
+    assert res.status_code == 200
+    assert res.json()["parcel"] == []
 
 
 def test_site_by_entity_requires_authentication(client: TestClient) -> None:
