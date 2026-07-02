@@ -1,7 +1,14 @@
-.PHONY: install api test lint format persistence persistence-up persistence-down verify-persistence
+.PHONY: install api test lint format persistence persistence-up persistence-down verify-persistence check-fresh
 
 install:
 	uv sync --all-extras
+
+check-fresh:
+	@git fetch origin develop --quiet 2>/dev/null || true; \
+	BEHIND=$$(git rev-list HEAD..origin/develop --count 2>/dev/null || echo 0); \
+	if [ "$$BEHIND" != "0" ]; then \
+		echo "WARNING: your local develop is $$BEHIND commit(s) behind origin/develop -- run 'git pull' or you may be serving stale API behavior."; \
+	fi
 
 persistence-up:
 	docker compose -f docker-compose.persistence.yml up -d
@@ -20,7 +27,7 @@ verify-persistence:
 	set -a && [ -f .env.local ] && . ./.env.local; set +a && \
 	uv run python scripts/verify_persistence.py
 
-api:
+api: check-fresh
 	set -a && [ -f .env.local ] && . ./.env.local; set +a && \
 	uv run uvicorn civilai_platform.app:create_app --factory --reload --port 8001
 
