@@ -1,7 +1,12 @@
-.PHONY: install api test lint format persistence persistence-up persistence-down verify-persistence check-fresh
+.PHONY: install api test lint format persistence persistence-up persistence-down verify-persistence check-fresh install-hooks
 
 install:
 	uv sync --all-extras
+
+install-hooks: ## Install git pre-push hook (runs make test before every push)
+	@printf '#!/bin/sh\n# Lint is excluded: this repo currently has pre-existing lint\n# violations (30 as of 2026-07-02) unrelated to any given change.\n# Re-add lint here once that debt is cleaned up.\nmake test\n' > .git/hooks/pre-push
+	@chmod +x .git/hooks/pre-push
+	@echo "pre-push hook installed"
 
 check-fresh:
 	@git fetch origin develop --quiet 2>/dev/null || true; \
