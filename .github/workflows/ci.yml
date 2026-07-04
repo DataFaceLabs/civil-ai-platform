@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  gauntlet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: civil-ai-platform
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: civil-ai-platform
+
+      - name: PR base branch policy
+        if: github.event_name == 'pull_request'
+        run: |
+          base="${{ github.base_ref }}"
+          head="${{ github.head_ref }}"
+
+          if [[ "$base" == "develop" ]]; then
+            echo "PR base policy OK: base=develop"
+            exit 0
+          fi
+
+          if [[ "$base" == "main" && ( "$head" == release/* || "$head" == hotfix/* ) ]]; then
+            echo "PR base policy OK: $head -> main"
+            exit 0
+          fi
+
+          echo "PR base policy violation: base=$base head=$head"
+          echo "Use base=develop for feature/fix/chore work."
+          echo "Only release/* or hotfix/* branches may target main."
+          exit 1
+
+      # pyproject.toml declares civilai-agent as an editable path dependency at
+      # ../civil-ai-agent, so the agent repo must be checked out as a sibling.
+      # The default GITHUB_TOKEN cannot read other private repos; running the
+      # gauntlet in CI needs a fine-grained PAT with contents:read on
+      # DataFaceLabs/civil-ai-agent stored as the CROSS_REPO_CHECKOUT_TOKEN
+      # secret. Until that secret exists the gauntlet steps SKIP with a loud
+      # warning rather than failing every PR red — the base-branch policy and
+      # secrets scan above/below still enforce. Adding the secret later
+      # activates the full gauntlet with no workflow change.
+      - name: Check for cross-repo checkout token
+        id: agent_token
+        working-directory: .
+        env:
+          CROSS_REPO_CHECKOUT_TOKEN: ${{ secrets.CROSS_REPO_CHECKOUT_TOKEN }}
+        run: |
+          if [[ -z "${CROSS_REPO_CHECKOUT_TOKEN}" ]]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Gauntlet skipped::CROSS_REPO_CHECKOUT_TOKEN is not configured, so the civilai-agent sibling checkout (an editable path dependency) is impossible and the gauntlet cannot run in CI. Create a fine-grained PAT with contents:read on DataFaceLabs/civil-ai-agent and add it as the CROSS_REPO_CHECKOUT_TOKEN repo secret to activate it."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.agent_token.outputs.present == 'true'
+        with:
+          repository: DataFaceLabs/civil-ai-agent
+          token: ${{ secrets.CROSS_REPO_CHECKOUT_TOKEN }}
+          ref: develop
+          path: civil-ai-agent
+
+      - name: Install uv
+        if: steps.agent_token.outputs.present == 'true'
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        if: steps.agent_token.outputs.present == 'true'
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        if: steps.agent_token.outputs.present == 'true'
+        run: uv sync --all-extras
+
+      - name: Gauntlet
+        if: steps.agent_token.outputs.present == 'true'
+        run: make gauntlet
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
