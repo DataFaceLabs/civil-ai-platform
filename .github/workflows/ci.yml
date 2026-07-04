@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  gauntlet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: civil-ai-platform
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: civil-ai-platform
+
+      - name: PR base branch policy
+        if: github.event_name == 'pull_request'
+        run: |
+          base="${{ github.base_ref }}"
+          head="${{ github.head_ref }}"
+
+          if [[ "$base" == "develop" ]]; then
+            echo "PR base policy OK: base=develop"
+            exit 0
+          fi
+
+          if [[ "$base" == "main" && ( "$head" == release/* || "$head" == hotfix/* ) ]]; then
+            echo "PR base policy OK: $head -> main"
+            exit 0
+          fi
+
+          echo "PR base policy violation: base=$base head=$head"
+          echo "Use base=develop for feature/fix/chore work."
+          echo "Only release/* or hotfix/* branches may target main."
+          exit 1
+
+      # pyproject.toml declares civilai-agent as an editable path dependency at
+      # ../civil-ai-agent, so the agent repo must be checked out as a sibling.
+      # The default GITHUB_TOKEN cannot read other private repos; a fine-grained
+      # PAT with contents:read on DataFaceLabs/civil-ai-agent must be stored as
+      # the CROSS_REPO_CHECKOUT_TOKEN secret.
+      - name: Validate cross-repo checkout token
+        working-directory: .
+        env:
+          CROSS_REPO_CHECKOUT_TOKEN: ${{ secrets.CROSS_REPO_CHECKOUT_TOKEN }}
+        run: |
+          if [[ -z "${CROSS_REPO_CHECKOUT_TOKEN}" ]]; then
+            echo "Missing required secret CROSS_REPO_CHECKOUT_TOKEN."
+            echo "Create a fine-grained PAT with contents:read on"
+            echo "DataFaceLabs/civil-ai-agent and add it as a repo secret."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          repository: DataFaceLabs/civil-ai-agent
+          token: ${{ secrets.CROSS_REPO_CHECKOUT_TOKEN }}
+          ref: develop
+          path: civil-ai-agent
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Gauntlet
+        run: make gauntlet
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
