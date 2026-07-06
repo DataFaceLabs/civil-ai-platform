@@ -102,7 +102,20 @@ def test_tenant_user_client_project_flow(client: TestClient) -> None:
 
     cl = client.post(
         "/v1/clients",
-        json={"name": "Jay Beard", "address": "123 Main", "location": "Austin, TX"},
+        json={
+            "name": "Beard Nursery LLC",
+            "address": "123 Main",
+            "location": "Austin, TX",
+            "contacts": [
+                {
+                    "id": "c1",
+                    "first_name": "Jay",
+                    "last_name": "Beard",
+                    "email": "jay@beard.com",
+                    "phone": "555-0100",
+                }
+            ],
+        },
         headers=h,
     )
     assert cl.status_code == 201
@@ -126,7 +139,8 @@ def test_tenant_user_client_project_flow(client: TestClient) -> None:
     assert state.status_code == 200
     sections = state.json()["sections"]
     client_section = next(s for s in sections if s["step_key"] == "client")
-    assert client_section["fields"]["CLIENT_NAME"]["value"] == "Jay Beard"
+    assert client_section["fields"]["CLIENT_COMPANY"]["value"] == "Beard Nursery LLC"
+    assert client_section["fields"]["CLIENT_ADDRESS"]["value"] == "123 Main"
 
     patch = client.patch(
         f"/v1/projects/{project_id}/state",
@@ -135,6 +149,147 @@ def test_tenant_user_client_project_flow(client: TestClient) -> None:
     )
     assert patch.status_code == 200
     assert patch.json()["proposed_use"] == "Industrial warehouse"
+
+
+def test_project_state_preserves_field_provenance_and_site_payload(client: TestClient) -> None:
+    admin = "prov-admin"
+    boot = client.post(
+        "/v1/dev/bootstrap",
+        json={"name": "Provenance Firm"},
+        headers=_headers(admin),
+    ).json()
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers(admin, tenant_id)
+
+    proj = client.post(
+        "/v1/projects",
+        json={
+            "name": "Barton Skwy",
+            "address": "2901 Barton Skwy",
+            "jurisdiction": "Hays County",
+        },
+        headers=h,
+    )
+    assert proj.status_code == 201
+    project_id = proj.json()["project_id"]
+
+    patch = client.patch(
+        f"/v1/projects/{project_id}/state",
+        json={
+            "sections": [
+                {
+                    "id": "parcel",
+                    "title": "Parcel",
+                    "body": "",
+                    "history": [],
+                    "step_key": "parcel",
+                    "status": "draft",
+                    "fields": {
+                        "PROPERTY_ADDRESS": {
+                            "value": "2901 BARTON SKWY",
+                            "status": "review",
+                            "data_status": "complete",
+                            "system_populated": True,
+                            "provenance": [
+                                {
+                                    "source": "County Appraisal District parcel record",
+                                    "source_id": "hayscad",
+                                    "citation": "https://hayscad.com/",
+                                    "retrieved_at": None,
+                                }
+                            ],
+                            "source_links": [
+                                {
+                                    "name": "County Appraisal District parcel record",
+                                    "description": "Parcel record",
+                                    "href": "https://hayscad.com/",
+                                    "source_type": "county_appraisal",
+                                    "source_id": "county_cad",
+                                }
+                            ],
+                        }
+                    },
+                }
+            ],
+            "site_payload": {
+                "parcel": [
+                    {
+                        "code": "PROPERTY_ADDRESS",
+                        "value": "2901 BARTON SKWY",
+                        "data_status": "complete",
+                        "provenance": [
+                            {
+                                "source": "County Appraisal District parcel record",
+                                "source_id": "hayscad",
+                                "citation": "https://hayscad.com/",
+                            }
+                        ],
+                    }
+                ]
+            },
+        },
+        headers=h,
+    )
+    assert patch.status_code == 200
+    body = patch.json()
+    address = body["sections"][0]["fields"]["PROPERTY_ADDRESS"]
+    assert address["provenance"][0]["source_id"] == "hayscad"
+    assert address["source_links"][0]["source_id"] == "county_cad"
+    assert body["site_payload"]["parcel"][0]["code"] == "PROPERTY_ADDRESS"
+
+
+def test_client_upsert_by_name_and_address(client: TestClient) -> None:
+    admin = "upsert-admin"
+    boot = client.post(
+        "/v1/dev/bootstrap",
+        json={"name": "Upsert Firm"},
+        headers=_headers(admin),
+    ).json()
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers(admin, tenant_id)
+
+    first = client.post(
+        "/v1/clients",
+        json={
+            "name": "Acme LLC",
+            "address": "100 Main St",
+            "location": "Austin, TX",
+            "contacts": [
+                {
+                    "id": "c1",
+                    "first_name": "Jane",
+                    "last_name": "Doe",
+                    "email": "jane@acme.com",
+                    "phone": "555-1000",
+                }
+            ],
+        },
+        headers=h,
+    )
+    assert first.status_code == 201
+    client_id = first.json()["client_id"]
+
+    second = client.post(
+        "/v1/clients",
+        json={
+            "name": "Acme LLC",
+            "address": "100 Main St",
+            "location": "Austin, TX",
+            "contacts": [
+                {
+                    "id": "c2",
+                    "first_name": "John",
+                    "last_name": "Smith",
+                    "email": "john@acme.com",
+                    "phone": "555-2000",
+                }
+            ],
+        },
+        headers=h,
+    )
+    assert second.status_code == 201
+    assert second.json()["client_id"] == client_id
+    assert len(second.json()["contacts"]) == 2
 
 
 def test_cross_tenant_access_denied(client: TestClient) -> None:

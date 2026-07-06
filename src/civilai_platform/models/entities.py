@@ -135,11 +135,22 @@ class Project(BaseModel):
     updated_at: datetime
 
 
+class FieldProvenance(BaseModel):
+    source: str
+    source_id: str | None = None
+    citation: str | None = None
+    retrieved_at: str | None = None
+
+
 class FieldValue(BaseModel):
     value: str = ""
     status: str = "empty"
     data_status: str | None = None
     system_populated: bool | None = None
+    provenance: list[FieldProvenance] | None = None
+    candidates: list[dict[str, Any]] | None = None
+    source_links: list[dict[str, Any]] | None = None
+    code_semantics: list[dict[str, Any]] | None = None
 
 
 class Section(BaseModel):
@@ -181,6 +192,7 @@ class ProjectState(BaseModel):
     context_docs: list[ContextDoc] = Field(default_factory=list)
     proposed_use: str | None = None
     parcel: dict[str, Any] | None = None
+    site_payload: dict[str, Any] | None = None
     site_context: dict[str, FieldValue] | None = None
     tcad_prop_id: int | None = None
     client_contacts: list[ClientContact] = Field(default_factory=list)
