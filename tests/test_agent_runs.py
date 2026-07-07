@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from civilai_platform.app import create_app
 from civilai_platform.store import get_store
+from tests.conftest import bootstrap_client_user
 
 
 @pytest.fixture(autouse=True)
@@ -18,18 +19,19 @@ def _dev_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(create_app())
+    with TestClient(create_app()) as test_client:
+        yield test_client
 
 
 def test_agent_run_create_and_get(client: TestClient) -> None:
     user_id = "user-agent"
-    bootstrap = client.post(
-        "/v1/dev/bootstrap",
-        json={"name": "Agent Firm", "email": "agent@example.com"},
-        headers={"X-Dev-User-Id": user_id},
+    bootstrap = bootstrap_client_user(
+        client,
+        user_id,
+        email="agent@example.com",
+        name="Agent Firm",
     )
-    assert bootstrap.status_code == 200
-    tenant_id = bootstrap.json()["memberships"][0]["tenant_id"]
+    tenant_id = bootstrap["memberships"][0]["tenant_id"]
     headers = {"X-Dev-User-Id": user_id, "X-Tenant-Id": tenant_id}
 
     project = client.post(

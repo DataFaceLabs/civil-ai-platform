@@ -20,7 +20,8 @@ def _dev_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(create_app())
+    with TestClient(create_app()) as test_client:
+        yield test_client
 
 
 def _headers(user_id: str, tenant_id: str | None = None) -> dict[str, str]:
@@ -30,14 +31,13 @@ def _headers(user_id: str, tenant_id: str | None = None) -> dict[str, str]:
     return h
 
 
+from civilai_platform.store import get_store
+from tests.conftest import bootstrap_client_user
+
+
 def _bootstrap(client: TestClient, user_id: str) -> str:
-    res = client.post(
-        "/v1/dev/bootstrap",
-        json={"name": "Data Proxy Firm", "email": f"{user_id}@example.com"},
-        headers=_headers(user_id),
-    )
-    assert res.status_code == 200
-    return res.json()["memberships"][0]["tenant_id"]
+    boot = bootstrap_client_user(client, user_id, name="Data Proxy Firm")
+    return boot["memberships"][0]["tenant_id"]
 
 
 def test_resolve_requires_authentication(client: TestClient) -> None:

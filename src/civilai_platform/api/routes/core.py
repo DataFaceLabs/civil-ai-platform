@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from civilai_platform.api.deps import admin_ctx, get_auth_context, get_store_dep, tenant_admin_ctx, tenant_ctx
 from civilai_platform.auth.context import AuthContext
 from civilai_platform.models.api import MeResponse, MeUpdate, TenantCreate, TenantResponse, TenantUpdate
-from civilai_platform.models.entities import Role, TenantMembership, MembershipStatus, UserProfile, utc_now, new_id
+from civilai_platform.models.entities import Role, TenantMembership, MembershipStatus, UserProfile, TenantStatus, utc_now, new_id
 from civilai_platform.services import tenant as tenant_svc
-from civilai_platform.services.audit import record_audit
+from civilai_platform.services.audit import record_audit, record_audit_for_ctx
 from civilai_platform.store.base import PlatformStore
 
 router = APIRouter(tags=["me", "tenant", "admin"])
@@ -64,9 +64,8 @@ def patch_tenant(
         updated = tenant_svc.update_tenant(store, tenant_id, body)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
-    record_audit(
-        tenant_id=tenant_id,
-        actor_user_id=ctx.user_id,
+    record_audit_for_ctx(
+        ctx,
         action="tenant.update",
         resource_type="tenant",
         resource_id=tenant_id,
@@ -79,24 +78,8 @@ def list_admin_tenants(
     ctx: Annotated[AuthContext, Depends(admin_ctx)],
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> list[TenantResponse]:
+    _ = ctx
     return [tenant_svc.tenant_to_response(t) for t in store.list_tenants()]
-
-
-@router.post("/v1/admin/tenants", response_model=TenantResponse, status_code=201)
-def create_admin_tenant(
-    body: TenantCreate,
-    ctx: Annotated[AuthContext, Depends(admin_ctx)],
-    store: Annotated[PlatformStore, Depends(get_store_dep)],
-) -> TenantResponse:
-    tenant = tenant_svc.create_tenant(store, body)
-    record_audit(
-        tenant_id=tenant.tenant_id,
-        actor_user_id=ctx.user_id,
-        action="tenant.create",
-        resource_type="tenant",
-        resource_id=tenant.tenant_id,
-    )
-    return tenant_svc.tenant_to_response(tenant)
 
 
 @router.get("/v1/admin/tenants/{tenant_id}", response_model=TenantResponse)
@@ -121,19 +104,41 @@ def patch_admin_tenant(
     try:
         updated = tenant_svc.update_tenant(store, tenant_id, body)
     except ValueError as exc:
-        raise HTTPException(404, str(exc)) from exc
+        msg = str(exc)
+        if "slug" in msg.lower():
+            raise HTTPException(409, msg) from exc
+        raise HTTPException(404, msg) from exc
+    if body.status == TenantStatus.SUSPENDED:
+        record_audit(
+            tenant_id=tenant_id,
+            actor_user_id=ctx.user_id,
+            action="tenant.suspend",
+            resource_type="tenant",
+            resource_id=tenant_id,
+        )
+    elif body.status == TenantStatus.ACTIVE:
+        record_audit(
+            tenant_id=tenant_id,
+            actor_user_id=ctx.user_id,
+            action="tenant.activate",
+            resource_type="tenant",
+            resource_id=tenant_id,
+        )
     return tenant_svc.tenant_to_response(updated)
 
 
-@router.delete("/v1/admin/tenants/{tenant_id}", status_code=204)
+@router.delete("/v1/admin/tenants/{tenant_id}", status_code=405)
 def delete_admin_tenant(
     tenant_id: str,
     ctx: Annotated[AuthContext, Depends(admin_ctx)],
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> None:
-    if not store.get_tenant(tenant_id):
-        raise HTTPException(404, "Tenant not found")
-    store.delete_tenant(tenant_id)
+    _ = ctx, store, tenant_id
+    raise HTTPException(
+        405,
+        "Permanent tenant removal requires email authorization. "
+        "POST /v1/admin/tenants/{tenant_id}/purge-request then /purge.",
+    )
 
 
 @router.post("/v1/dev/bootstrap", response_model=MeResponse)
@@ -142,21 +147,28 @@ def dev_bootstrap(
     ctx: Annotated[AuthContext, Depends(get_auth_context)],
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> MeResponse:
-    """Dev-only: create tenant + admin membership for first-time local login."""
+    """Dev-only: resolve user by email and attach session to an existing membership."""
     from civilai_platform.settings import get_settings
+    from civilai_platform.services import platform_tenant as platform_tenant_svc
+    from civilai_platform.services import user as user_svc
 
     if not get_settings().dev_auth:
         raise HTTPException(403, "Dev bootstrap disabled")
-    name = str(body.get("name", "My Firm")).strip() or "My Firm"
-    email = str(body.get("email", f"{ctx.user_id}@local.dev"))
-    parts = name.split(" ", 1)
-    first = parts[0]
-    last = parts[1] if len(parts) > 1 else ""
+    platform_tenant_svc.ensure_platform_tenant(store)
+    email = str(body.get("email", f"{ctx.user_id}@local.dev")).strip().lower()
+    tenant_slug = str(body.get("tenant_slug", "")).strip()
     now = utc_now()
-    profile = store.get_user_profile(ctx.user_id)
+
+    existing = user_svc.profile_for_email(store, email)
+    user_id = existing.user_id if existing else ctx.user_id
+    profile = store.get_user_profile(user_id)
     if not profile:
+        local_part = email.split("@", 1)[0].replace(".", " ").replace("_", " ").strip()
+        parts = local_part.split()
+        first = parts[0].title() if parts else "User"
+        last = " ".join(p.title() for p in parts[1:]) if len(parts) > 1 else ""
         profile = UserProfile(
-            user_id=ctx.user_id,
+            user_id=user_id,
             email=email,
             first_name=first,
             last_name=last,
@@ -164,27 +176,32 @@ def dev_bootstrap(
             updated_at=now,
         )
         store.put_user_profile(profile)
-    memberships = store.list_memberships_for_user(ctx.user_id)
-    if not memberships:
-        tenant = tenant_svc.create_tenant(
-            store,
-            TenantCreate(name=name, address="", location="", phone="", fax=""),
+    elif profile.email.strip().lower() != email:
+        profile = profile.model_copy(update={"email": email, "updated_at": now})
+        store.put_user_profile(profile)
+
+    user_svc.activate_invited_memberships(store, user_id)
+    is_platform_admin = platform_tenant_svc.is_platform_admin_user(store, user_id)
+    if is_platform_admin:
+        platform_tenant_svc.ensure_platform_admin_membership(store, user_id)
+    memberships = store.list_memberships_for_user(user_id)
+
+    if tenant_slug:
+        tenant = store.get_tenant_by_slug(tenant_slug)
+        if not tenant:
+            raise HTTPException(404, "Organization not found")
+        if tenant.status != TenantStatus.ACTIVE and not is_platform_admin:
+            raise HTTPException(404, "Organization not found or inactive")
+        if memberships and not any(m.tenant_id == tenant.tenant_id for m in memberships):
+            if not is_platform_admin:
+                raise HTTPException(
+                    403,
+                    "Your account is not registered for this organization.",
+                )
+
+    if not memberships and not is_platform_admin:
+        raise HTTPException(
+            403,
+            "No account found for this email. Ask your tenant admin to invite you.",
         )
-        store.put_membership(
-            TenantMembership(
-                tenant_id=tenant.tenant_id,
-                user_id=ctx.user_id,
-                role=Role.ADMIN,
-                status=MembershipStatus.ACTIVE,
-                joined_at=now,
-            )
-        )
-        store.set_platform_admin(ctx.user_id, True)
-        record_audit(
-            tenant_id=tenant.tenant_id,
-            actor_user_id=ctx.user_id,
-            action="tenant.create",
-            resource_type="tenant",
-            resource_id=tenant.tenant_id,
-        )
-    return tenant_svc.get_me(store, ctx.user_id)
+    return tenant_svc.get_me(store, user_id)

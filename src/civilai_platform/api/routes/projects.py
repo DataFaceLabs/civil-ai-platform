@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from civilai_platform.api.deps import get_store_dep, tenant_ctx
+from civilai_platform.auth.actor import tenant_actor_user_id
 from civilai_platform.auth.authz import require_membership
 from civilai_platform.auth.context import AuthContext
 from civilai_platform.models.api import (
@@ -48,11 +49,12 @@ def create_project(
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> ProjectResponse:
     assert ctx.tenant_id
+    actor_id = tenant_actor_user_id(store, ctx)
     return project_svc.create_project(
         store,
         tenant_id=ctx.tenant_id,
-        owner_user_id=ctx.user_id,
-        actor_user_id=ctx.user_id,
+        owner_user_id=actor_id,
+        actor_user_id=actor_id,
         data=body,
     )
 
@@ -78,12 +80,13 @@ def patch_project(
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> ProjectResponse:
     assert ctx.tenant_id
+    actor_id = tenant_actor_user_id(store, ctx)
     try:
         return project_svc.update_project(
             store,
             tenant_id=ctx.tenant_id,
             project_id=project_id,
-            actor_user_id=ctx.user_id,
+            actor_user_id=actor_id,
             data=body,
         )
     except ValueError as exc:
@@ -97,12 +100,13 @@ def delete_project(
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> None:
     assert ctx.tenant_id
+    actor_id = tenant_actor_user_id(store, ctx)
     try:
         project_svc.delete_project(
             store,
             tenant_id=ctx.tenant_id,
             project_id=project_id,
-            actor_user_id=ctx.user_id,
+            actor_user_id=actor_id,
         )
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
@@ -129,12 +133,13 @@ def patch_project_state(
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> ProjectStateResponse:
     assert ctx.tenant_id
+    actor_id = tenant_actor_user_id(store, ctx)
     try:
         return project_svc.patch_project_state(
             store,
             tenant_id=ctx.tenant_id,
             project_id=project_id,
-            actor_user_id=ctx.user_id,
+            actor_user_id=actor_id,
             patch=body,
         )
     except ValueError as exc:

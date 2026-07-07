@@ -69,3 +69,6 @@ class DataProxyClient:
 
     def get_site(self, entity_id: str) -> dict[str, Any]:
         return self.request("GET", f"/v1/fe/site/by-entity/{entity_id}")
+
+    def invoke_llm(self, body: dict[str, Any]) -> dict[str, Any]:
+        return self.request("POST", "/v1/experimental/llm/invoke", json=body)

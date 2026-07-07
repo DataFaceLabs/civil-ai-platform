@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 
 from civilai_platform.api.deps import get_store_dep, tenant_ctx
+from civilai_platform.auth.actor import tenant_actor_user_id
 from civilai_platform.auth.context import AuthContext
 from civilai_platform.models.api import UserCreate, UserResponse, UserUpdate
 from civilai_platform.models.entities import Role
@@ -35,12 +36,16 @@ def create_user(
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> UserResponse:
     assert ctx.tenant_id
-    return user_svc.create_user(
-        store,
-        tenant_id=ctx.tenant_id,
-        actor_user_id=ctx.user_id,
-        data=body,
-    )
+    actor_id = tenant_actor_user_id(store, ctx)
+    try:
+        return user_svc.create_user(
+            store,
+            tenant_id=ctx.tenant_id,
+            actor_user_id=actor_id,
+            data=body,
+        )
+    except user_svc.UserConflictError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
@@ -51,12 +56,13 @@ def update_user(
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> UserResponse:
     assert ctx.tenant_id
+    actor_id = tenant_actor_user_id(store, ctx)
     try:
         return user_svc.update_user(
             store,
             tenant_id=ctx.tenant_id,
             user_id=user_id,
-            actor_user_id=ctx.user_id,
+            actor_user_id=actor_id,
             data=body,
         )
     except ValueError as exc:
@@ -70,12 +76,13 @@ def delete_user(
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> None:
     assert ctx.tenant_id
+    actor_id = tenant_actor_user_id(store, ctx)
     try:
         user_svc.delete_user(
             store,
             tenant_id=ctx.tenant_id,
             user_id=user_id,
-            actor_user_id=ctx.user_id,
+            actor_user_id=actor_id,
         )
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc

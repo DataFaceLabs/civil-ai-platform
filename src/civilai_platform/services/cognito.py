@@ -20,27 +20,42 @@ class CognitoProvisioner:
         first_name: str,
         last_name: str,
         password: str | None = None,
+        invite: bool = True,
     ) -> str | None:
         """Create Cognito user when pool is configured; return Cognito sub or None."""
         if not self._client or not self._pool_id:
             return None
         temp_password = password or "ChangeMe-123!"
-        resp = self._client.admin_create_user(
-            UserPoolId=self._pool_id,
-            Username=email,
-            UserAttributes=[
+        params: dict = {
+            "UserPoolId": self._pool_id,
+            "Username": email,
+            "UserAttributes": [
                 {"Name": "email", "Value": email},
                 {"Name": "email_verified", "Value": "true"},
                 {"Name": "given_name", "Value": first_name},
                 {"Name": "family_name", "Value": last_name},
             ],
-            TemporaryPassword=temp_password,
-            MessageAction="SUPPRESS",
-        )
+            "TemporaryPassword": temp_password,
+        }
+        if invite and not password:
+            params["DesiredDeliveryMediums"] = ["EMAIL"]
+        else:
+            params["MessageAction"] = "SUPPRESS"
+        resp = self._client.admin_create_user(**params)
         for attr in resp["User"].get("Attributes", []):
             if attr["Name"] == "sub":
                 return attr["Value"]
         return resp["User"]["Username"]
+
+    def disable_user(self, *, email: str) -> None:
+        if not self._client or not self._pool_id:
+            return
+        self._client.admin_disable_user(UserPoolId=self._pool_id, Username=email)
+
+    def delete_user(self, *, email: str) -> None:
+        if not self._client or not self._pool_id:
+            return
+        self._client.admin_delete_user(UserPoolId=self._pool_id, Username=email)
 
 
 _provisioner: CognitoProvisioner | None = None

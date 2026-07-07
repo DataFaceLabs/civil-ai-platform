@@ -62,6 +62,7 @@ def role_at_least(actual: Role, minimum: Role) -> bool:
 class Tenant(BaseModel):
     tenant_id: str
     name: str
+    url_slug: str
     address: str = ""
     location: str = ""
     phone: str = ""
@@ -71,6 +72,20 @@ class Tenant(BaseModel):
     feature_flags: dict[str, bool] = Field(default_factory=dict)
     enabled_data_sources: list[str] = Field(default_factory=list)
     created_at: datetime
+    updated_at: datetime
+
+
+class LlmBaselineTemplate(BaseModel):
+    version: int
+    config: dict[str, Any]
+    updated_at: datetime
+    updated_by_user_id: str | None = None
+
+
+class TenantLlmConfig(BaseModel):
+    tenant_id: str
+    baseline_version_at_copy: int
+    config: dict[str, Any]
     updated_at: datetime
 
 
@@ -142,15 +157,37 @@ class FieldProvenance(BaseModel):
     retrieved_at: str | None = None
 
 
+class FieldSourceLink(BaseModel):
+    name: str
+    description: str
+    href: str | None = None
+    source_type: str
+    source_id: str | None = None
+
+
+class FieldCodeSemantic(BaseModel):
+    code: str
+    ui_label: str
+    ui_detail: str
+    # Data API uses vocabulary confidence labels (e.g. bootstrap, pending), not only floats.
+    confidence: str | float
+    external_sources: list[FieldSourceLink] = Field(default_factory=list)
+
+
+class FieldCandidate(BaseModel):
+    value: Any | None = None
+    label: str | None = None
+
+
 class FieldValue(BaseModel):
     value: str = ""
     status: str = "empty"
     data_status: str | None = None
     system_populated: bool | None = None
-    provenance: list[FieldProvenance] | None = None
-    candidates: list[dict[str, Any]] | None = None
-    source_links: list[dict[str, Any]] | None = None
-    code_semantics: list[dict[str, Any]] | None = None
+    provenance: list[FieldProvenance] = Field(default_factory=list)
+    candidates: list[FieldCandidate] = Field(default_factory=list)
+    source_links: list[FieldSourceLink] = Field(default_factory=list)
+    code_semantics: list[FieldCodeSemantic] = Field(default_factory=list)
 
 
 class Section(BaseModel):

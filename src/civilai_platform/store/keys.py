@@ -10,6 +10,31 @@ def tenant_meta_sk() -> str:
     return "META"
 
 
+def slug_pk(url_slug: str) -> str:
+    return f"SLUG#{url_slug}"
+
+
+def slug_meta_sk() -> str:
+    return "META"
+
+
+def llm_baseline_pk() -> str:
+    return "APP#config"
+
+
+def llm_baseline_sk() -> str:
+    return "LLM_BASELINE"
+
+
+def tenant_llm_config_sk() -> str:
+    return "LLM_CONFIG"
+
+
+def tenant_logo_s3_key(tenant_id: str, filename: str) -> str:
+    safe = filename.replace("/", "_")
+    return f"tenant/{tenant_id}/branding/logo/{safe}"
+
+
 def membership_sk(user_id: str) -> str:
     return f"USER#{user_id}"
 

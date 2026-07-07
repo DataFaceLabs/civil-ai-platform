@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from civilai_platform.app import create_app
 from civilai_platform.store import get_store
+from tests.conftest import bootstrap_client_user
 
 
 @pytest.fixture(autouse=True)
@@ -16,7 +17,8 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(create_app())
+    with TestClient(create_app()) as test_client:
+        yield test_client
 
 
 def _h(user: str, tenant: str | None = None) -> dict[str, str]:
@@ -27,7 +29,7 @@ def _h(user: str, tenant: str | None = None) -> dict[str, str]:
 
 
 def test_viewer_cannot_patch_project_state(client: TestClient) -> None:
-    admin = client.post("/v1/dev/bootstrap", json={"name": "Firm"}, headers=_h("admin-a")).json()
+    admin = bootstrap_client_user(client, "admin-a", name="Firm")
     tenant = admin["memberships"][0]["tenant_id"]
     proj = client.post(
         "/v1/projects",
@@ -66,7 +68,7 @@ def test_viewer_cannot_patch_project_state(client: TestClient) -> None:
 
 
 def test_audit_events_recorded(client: TestClient) -> None:
-    me = client.post("/v1/dev/bootstrap", json={"name": "Audit Firm"}, headers=_h("audit-user")).json()
+    me = bootstrap_client_user(client, "audit-user", name="Audit Firm")
     tenant = me["memberships"][0]["tenant_id"]
     store = get_store()
     events = store.list_audit_events(tenant)

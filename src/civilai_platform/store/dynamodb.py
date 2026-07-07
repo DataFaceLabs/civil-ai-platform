@@ -9,14 +9,17 @@ from civilai_platform.models.entities import (
     AgentRun,
     AuditEvent,
     Client,
+    LlmBaselineTemplate,
     Project,
     ProjectState,
     Tenant,
+    TenantLlmConfig,
     TenantMembership,
     UserProfile,
 )
 from civilai_platform.settings import get_settings
 from civilai_platform.store.base import PlatformStore
+from civilai_platform.store.tenant_payload import collect_known_slugs, ensure_url_slug
 from civilai_platform.store.keys import (
     ENTITY_TYPE,
     agent_run_sk,
@@ -25,10 +28,15 @@ from civilai_platform.store.keys import (
     gsi1_sk_tenant,
     gsi2_pk_tenant,
     gsi2_sk_audit,
+    llm_baseline_pk,
+    llm_baseline_sk,
     membership_sk,
     profile_sk,
     project_sk,
+    slug_meta_sk,
+    slug_pk,
     state_sk,
+    tenant_llm_config_sk,
     tenant_meta_sk,
     tenant_pk,
     user_pk,
@@ -67,6 +75,24 @@ class DynamoDBStore(PlatformStore):
             self._ddb = session.resource("dynamodb")
         self._table = self._ddb.Table(self._table_name)
 
+    def _scan_items(self, **kwargs: Any) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        resp = self._table.scan(**kwargs)
+        items.extend(resp.get("Items", []))
+        while resp.get("LastEvaluatedKey"):
+            resp = self._table.scan(**kwargs, ExclusiveStartKey=resp["LastEvaluatedKey"])
+            items.extend(resp.get("Items", []))
+        return items
+
+    def _query_items(self, **kwargs: Any) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        resp = self._table.query(**kwargs)
+        items.extend(resp.get("Items", []))
+        while resp.get("LastEvaluatedKey"):
+            resp = self._table.query(**kwargs, ExclusiveStartKey=resp["LastEvaluatedKey"])
+            items.extend(resp.get("Items", []))
+        return items
+
     def _put(self, pk: str, sk: str, entity_type: str, payload: dict[str, Any], gsi: dict | None = None) -> None:
         item: dict[str, Any] = {
             "PK": pk,
@@ -88,26 +114,139 @@ class DynamoDBStore(PlatformStore):
     def _delete(self, pk: str, sk: str) -> None:
         self._table.delete_item(Key={"PK": pk, "SK": sk})
 
-    def put_tenant(self, tenant: Tenant) -> None:
+    def _write_tenant(self, tenant: Tenant, *, previous_slug: str | None = None) -> None:
+        if previous_slug and previous_slug != tenant.url_slug:
+            self._delete(slug_pk(previous_slug), slug_meta_sk())
         self._put(tenant_pk(tenant.tenant_id), tenant_meta_sk(), "Tenant", tenant.model_dump())
+        self._put(
+            slug_pk(tenant.url_slug),
+            slug_meta_sk(),
+            "TenantSlug",
+            {"tenant_id": tenant.tenant_id, "url_slug": tenant.url_slug},
+        )
+
+    def _scan_tenant_payloads(self) -> list[dict[str, Any]]:
+        items = self._scan_items(
+            FilterExpression="SK = :sk AND #et = :et",
+            ExpressionAttributeNames={"#et": ENTITY_TYPE},
+            ExpressionAttributeValues={":sk": tenant_meta_sk(), ":et": "Tenant"},
+        )
+        return [json.loads(item["payload"]) for item in items]
+
+    def put_tenant(self, tenant: Tenant) -> None:
+        item = self._get(tenant_pk(tenant.tenant_id), tenant_meta_sk())
+        previous_slug = None
+        if item:
+            previous_slug = json.loads(item["payload"]).get("url_slug")
+        self._write_tenant(tenant, previous_slug=previous_slug)
 
     def get_tenant(self, tenant_id: str) -> Tenant | None:
         item = self._get(tenant_pk(tenant_id), tenant_meta_sk())
         if not item:
             return None
-        return Tenant.model_validate(json.loads(item["payload"]))
+        payload = json.loads(item["payload"])
+        if payload.get("url_slug"):
+            return Tenant.model_validate(payload)
+        reserved = collect_known_slugs(self._scan_tenant_payloads())
+        payload, _ = ensure_url_slug(payload, reserved)
+        tenant = Tenant.model_validate(payload)
+        self._write_tenant(tenant, previous_slug=None)
+        return tenant
+
+    def get_tenant_by_slug(self, url_slug: str) -> Tenant | None:
+        item = self._get(slug_pk(url_slug), slug_meta_sk())
+        if not item:
+            return None
+        payload = json.loads(item["payload"])
+        return self.get_tenant(str(payload["tenant_id"]))
+
+    def list_tenant_slugs(self) -> set[str]:
+        slugs: set[str] = set()
+        for tenant in self.list_tenants():
+            slugs.add(tenant.url_slug)
+        return slugs
 
     def list_tenants(self) -> list[Tenant]:
         # Scan for META rows — acceptable for platform admin only at low scale
-        resp = self._table.scan(
+        items = self._scan_items(
             FilterExpression="SK = :sk AND #et = :et",
             ExpressionAttributeNames={"#et": ENTITY_TYPE},
             ExpressionAttributeValues={":sk": tenant_meta_sk(), ":et": "Tenant"},
         )
-        return [Tenant.model_validate(json.loads(i["payload"])) for i in resp.get("Items", [])]
+        payloads = [json.loads(item["payload"]) for item in items]
+        reserved = collect_known_slugs(payloads)
+        tenants: list[Tenant] = []
+        for payload in payloads:
+            updated_payload, backfilled = ensure_url_slug(payload, reserved)
+            tenant = Tenant.model_validate(updated_payload)
+            if backfilled:
+                self._write_tenant(tenant, previous_slug=None)
+            tenants.append(tenant)
+        return tenants
 
     def delete_tenant(self, tenant_id: str) -> None:
+        tenant = self.get_tenant(tenant_id)
+        if tenant:
+            self._delete(slug_pk(tenant.url_slug), slug_meta_sk())
         self._delete(tenant_pk(tenant_id), tenant_meta_sk())
+        self._delete(tenant_pk(tenant_id), tenant_llm_config_sk())
+
+    def purge_tenant_data(self, tenant_id: str) -> list[str]:
+        user_ids = [m.user_id for m in self.list_memberships_for_tenant(tenant_id)]
+        items = self._query_items(
+            KeyConditionExpression="PK = :pk",
+            ExpressionAttributeValues={":pk": tenant_pk(tenant_id)},
+        )
+        for item in items:
+            self._delete(item["PK"], item["SK"])
+        for user_id in user_ids:
+            if not self.list_memberships_for_user(user_id):
+                self.delete_user_profile(user_id)
+                if self.is_platform_admin(user_id):
+                    self.set_platform_admin(user_id, False)
+        return user_ids
+
+    def get_llm_baseline(self) -> LlmBaselineTemplate | None:
+        item = self._get(llm_baseline_pk(), llm_baseline_sk())
+        if not item:
+            return None
+        return LlmBaselineTemplate.model_validate(json.loads(item["payload"]))
+
+    def put_llm_baseline(self, baseline: LlmBaselineTemplate) -> None:
+        self._put(
+            llm_baseline_pk(),
+            llm_baseline_sk(),
+            "LlmBaselineTemplate",
+            baseline.model_dump(),
+        )
+
+    def get_tenant_llm_config(self, tenant_id: str) -> TenantLlmConfig | None:
+        item = self._get(tenant_pk(tenant_id), tenant_llm_config_sk())
+        if not item:
+            return None
+        return TenantLlmConfig.model_validate(json.loads(item["payload"]))
+
+    def put_tenant_llm_config(self, config: TenantLlmConfig) -> None:
+        self._put(
+            tenant_pk(config.tenant_id),
+            tenant_llm_config_sk(),
+            "TenantLlmConfig",
+            config.model_dump(),
+        )
+
+    def list_platform_admin_user_ids(self) -> list[str]:
+        items = self._scan_items(
+            FilterExpression="SK = :sk AND #et = :et",
+            ExpressionAttributeNames={"#et": ENTITY_TYPE},
+            ExpressionAttributeValues={":sk": "PLATFORM_ADMIN", ":et": "PlatformAdmin"},
+        )
+        ids: list[str] = []
+        for item in items:
+            payload = json.loads(item["payload"])
+            uid = payload.get("user_id")
+            if uid:
+                ids.append(str(uid))
+        return sorted(ids)
 
     def put_user_profile(self, profile: UserProfile) -> None:
         self._put(user_pk(profile.user_id), profile_sk(), "UserProfile", profile.model_dump())
@@ -117,6 +256,9 @@ class DynamoDBStore(PlatformStore):
         if not item:
             return None
         return UserProfile.model_validate(json.loads(item["payload"]))
+
+    def delete_user_profile(self, user_id: str) -> None:
+        self._delete(user_pk(user_id), profile_sk())
 
     def put_membership(self, membership: TenantMembership) -> None:
         gsi = {
@@ -138,23 +280,23 @@ class DynamoDBStore(PlatformStore):
         return TenantMembership.model_validate(json.loads(item["payload"]))
 
     def list_memberships_for_tenant(self, tenant_id: str) -> list[TenantMembership]:
-        resp = self._table.query(
+        items = self._query_items(
             KeyConditionExpression="PK = :pk AND begins_with(SK, :prefix)",
             ExpressionAttributeValues={":pk": tenant_pk(tenant_id), ":prefix": "USER#"},
         )
         return [
             TenantMembership.model_validate(json.loads(i["payload"]))
-            for i in resp.get("Items", [])
+            for i in items
             if i.get(ENTITY_TYPE) == "TenantMembership"
         ]
 
     def list_memberships_for_user(self, user_id: str) -> list[TenantMembership]:
-        resp = self._table.query(
+        items = self._query_items(
             IndexName="GSI1",
             KeyConditionExpression="GSI1PK = :pk",
             ExpressionAttributeValues={":pk": gsi1_pk_user(user_id)},
         )
-        return [TenantMembership.model_validate(json.loads(i["payload"])) for i in resp.get("Items", [])]
+        return [TenantMembership.model_validate(json.loads(i["payload"])) for i in items]
 
     def delete_membership(self, tenant_id: str, user_id: str) -> None:
         self._delete(tenant_pk(tenant_id), membership_sk(user_id))
@@ -174,11 +316,11 @@ class DynamoDBStore(PlatformStore):
         return Client.model_validate(json.loads(item["payload"]))
 
     def list_clients(self, tenant_id: str) -> list[Client]:
-        resp = self._table.query(
+        items = self._query_items(
             KeyConditionExpression="PK = :pk AND begins_with(SK, :prefix)",
             ExpressionAttributeValues={":pk": tenant_pk(tenant_id), ":prefix": "CLIENT#"},
         )
-        return [Client.model_validate(json.loads(i["payload"])) for i in resp.get("Items", [])]
+        return [Client.model_validate(json.loads(i["payload"])) for i in items]
 
     def delete_client(self, tenant_id: str, client_id: str) -> None:
         self._delete(tenant_pk(tenant_id), client_sk(client_id))
@@ -198,11 +340,11 @@ class DynamoDBStore(PlatformStore):
         return Project.model_validate(json.loads(item["payload"]))
 
     def list_projects(self, tenant_id: str) -> list[Project]:
-        resp = self._table.query(
+        items = self._query_items(
             KeyConditionExpression="PK = :pk AND begins_with(SK, :prefix)",
             ExpressionAttributeValues={":pk": tenant_pk(tenant_id), ":prefix": "PROJECT#"},
         )
-        return [Project.model_validate(json.loads(i["payload"])) for i in resp.get("Items", [])]
+        return [Project.model_validate(json.loads(i["payload"])) for i in items]
 
     def delete_project(self, tenant_id: str, project_id: str) -> None:
         self._delete(tenant_pk(tenant_id), project_sk(project_id))

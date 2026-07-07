@@ -4,8 +4,14 @@ from functools import lru_cache
 
 import boto3
 
-from civilai_platform.models.api import ArtifactPresignRequest, ArtifactPresignResponse
+from civilai_platform.models.api import (
+    ArtifactPresignRequest,
+    ArtifactPresignResponse,
+    LogoPresignRequest,
+    LogoPresignResponse,
+)
 from civilai_platform.settings import get_settings
+from civilai_platform.store.keys import tenant_logo_s3_key
 
 _memory_artifacts: dict[str, bytes] = {}
 
@@ -22,6 +28,41 @@ def artifact_s3_key(tenant_id: str, project_id: str, kind: str, filename: str) -
     if kind == "feasibility_html":
         return f"tenant/{tenant_id}/project/{project_id}/state/feasibility.html"
     return f"tenant/{tenant_id}/project/{project_id}/uploads/{uuid.uuid4()}/{safe}"
+
+
+def tenant_logo_url(logo_s3_key: str | None) -> str | None:
+    if not logo_s3_key:
+        return None
+    settings = get_settings()
+    if settings.artifact_backend == "s3" and settings.app_bucket:
+        return _s3_client().generate_presigned_url(
+            "get_object",
+            Params={"Bucket": settings.app_bucket, "Key": logo_s3_key},
+            ExpiresIn=3600,
+        )
+    return f"/v1/tenant/logo/download?key={logo_s3_key}"
+
+
+def presign_tenant_logo(*, tenant_id: str, request: LogoPresignRequest) -> LogoPresignResponse:
+    settings = get_settings()
+    key = tenant_logo_s3_key(tenant_id, request.filename)
+    expires = 3600
+    if settings.artifact_backend == "s3" and settings.app_bucket:
+        url = _s3_client().generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": settings.app_bucket,
+                "Key": key,
+                "ContentType": request.content_type,
+            },
+            ExpiresIn=expires,
+        )
+        return LogoPresignResponse(upload_url=url, s3_key=key, expires_in=expires)
+    return LogoPresignResponse(
+        upload_url=f"/v1/tenant/logo/upload?key={key}",
+        s3_key=key,
+        expires_in=expires,
+    )
 
 
 def presign_upload(

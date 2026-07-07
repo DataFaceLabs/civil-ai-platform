@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -9,12 +10,14 @@ from civilai_platform.models.entities import (
     ContextDoc,
     FeasibilityDocumentRef,
     FieldValue,
+    LlmBaselineTemplate,
     MembershipStatus,
     Project,
     ProjectState,
     Role,
     Section,
     Tenant,
+    TenantLlmConfig,
     TenantMembership,
     TenantStatus,
     UserProfile,
@@ -24,18 +27,29 @@ from civilai_platform.models.entities import (
 
 class TenantCreate(BaseModel):
     name: str
+    url_slug: str | None = None
     address: str = ""
     location: str = ""
     phone: str = ""
     fax: str = ""
 
 
+class AdminTenantCreate(TenantCreate):
+    """Platform admin creates tenant and invites the initial tenant admin."""
+
+    admin_email: str
+    admin_first_name: str
+    admin_last_name: str
+
+
 class TenantUpdate(BaseModel):
     name: str | None = None
+    url_slug: str | None = None
     address: str | None = None
     location: str | None = None
     phone: str | None = None
     fax: str | None = None
+    logo_s3_key: str | None = None
     status: TenantStatus | None = None
     feature_flags: dict[str, bool] | None = None
     enabled_data_sources: list[str] | None = None
@@ -44,6 +58,7 @@ class TenantUpdate(BaseModel):
 class TenantResponse(BaseModel):
     tenant_id: str
     name: str
+    url_slug: str
     address: str
     location: str
     phone: str
@@ -60,6 +75,105 @@ class TenantResponse(BaseModel):
         return cls(**t.model_dump())
 
 
+class PublicTenantResponse(BaseModel):
+    tenant_id: str
+    name: str
+    url_slug: str
+    logo_url: str | None = None
+
+
+class TenantMembershipSummary(BaseModel):
+    tenant_id: str
+    tenant_name: str
+    tenant_slug: str
+    role: Role
+    status: MembershipStatus
+
+
+class LlmConfigResponse(BaseModel):
+    version: int
+    baseline_version_at_copy: int | None = None
+    config: dict[str, Any]
+    updated_at: datetime | None = None
+
+
+class LlmConfigUpdate(BaseModel):
+    config: dict[str, Any]
+
+
+class TenantLlmInvokeRequest(BaseModel):
+    step_key: str
+    user_prompt: str
+    field_context: dict[str, str] = Field(default_factory=dict)
+    search_context_hint: str = ""
+
+
+class LogoPresignResponse(BaseModel):
+    upload_url: str
+    s3_key: str
+    expires_in: int
+
+
+class LogoPresignRequest(BaseModel):
+    filename: str
+    content_type: str
+
+
+class PlatformAdminResponse(BaseModel):
+    user_id: str
+    email: str
+    first_name: str
+    last_name: str
+    phone: str | None = None
+
+
+class PlatformAdminCreate(BaseModel):
+    email: str
+    first_name: str
+    last_name: str
+    phone: str | None = None
+    password: str | None = None
+    invite: bool = True
+
+
+class PlatformAdminUpdate(BaseModel):
+    email: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    phone: str | None = None
+
+
+class AdminUserRowResponse(BaseModel):
+    user_id: str
+    email: str
+    first_name: str
+    last_name: str
+    phone: str | None = None
+    role: Role
+    status: MembershipStatus
+    tenant_id: str
+    tenant_name: str
+    tenant_slug: str
+    is_platform_admin: bool = False
+    joined_at: datetime
+
+
+class AdminUserListResponse(BaseModel):
+    users: list[AdminUserRowResponse]
+    total: int
+    limit: int
+
+
+class TenantPurgeConfirm(BaseModel):
+    confirmation_email: str
+    authorization_code: str
+
+
+class TenantPurgeRequestResponse(BaseModel):
+    message: str
+    authorization_code: str | None = None
+
+
 class UserCreate(BaseModel):
     email: str
     first_name: str
@@ -67,6 +181,7 @@ class UserCreate(BaseModel):
     phone: str | None = None
     role: Role = Role.ANALYST
     password: str | None = None
+    invite: bool = True
 
 
 class UserUpdate(BaseModel):
@@ -102,13 +217,6 @@ class MeUpdate(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     phone: str | None = None
-
-
-class TenantMembershipSummary(BaseModel):
-    tenant_id: str
-    tenant_name: str
-    role: Role
-    status: MembershipStatus
 
 
 class ClientCreate(BaseModel):
@@ -198,7 +306,7 @@ class ProjectStateResponse(BaseModel):
     context_docs: list[ContextDoc]
     proposed_use: str | None
     parcel: dict | None
-    site_payload: dict | None = None
+    site_payload: dict | None
     site_context: dict[str, FieldValue] | None
     tcad_prop_id: int | None
     client_contacts: list[ClientContact]
