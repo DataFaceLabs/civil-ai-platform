@@ -54,3 +54,7 @@ format:
 
 openapi:
 	uv run python scripts/generate_openapi.py
+
+seed-test-companies:
+	set -a && [ -f .env.local ] && . ./.env.local; set +a && \
+	uv run python scripts/seed_test_companies.py

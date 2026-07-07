@@ -4,9 +4,11 @@ from civilai_platform.models.entities import (
     AgentRun,
     AuditEvent,
     Client,
+    LlmBaselineTemplate,
     Project,
     ProjectState,
     Tenant,
+    TenantLlmConfig,
     TenantMembership,
     UserProfile,
 )
@@ -24,24 +26,82 @@ class MemoryStore(PlatformStore):
         self._audit: list[AuditEvent] = []
         self._platform_admins: set[str] = set()
         self._agent_runs: dict[tuple[str, str, str], AgentRun] = {}
+        self._slug_index: dict[str, str] = {}
+        self._llm_baseline: LlmBaselineTemplate | None = None
+        self._tenant_llm: dict[str, TenantLlmConfig] = {}
 
     def put_tenant(self, tenant: Tenant) -> None:
+        existing = self._tenants.get(tenant.tenant_id)
+        if existing and existing.url_slug != tenant.url_slug:
+            self._slug_index.pop(existing.url_slug, None)
         self._tenants[tenant.tenant_id] = tenant
+        self._slug_index[tenant.url_slug] = tenant.tenant_id
 
     def get_tenant(self, tenant_id: str) -> Tenant | None:
         return self._tenants.get(tenant_id)
+
+    def get_tenant_by_slug(self, url_slug: str) -> Tenant | None:
+        tenant_id = self._slug_index.get(url_slug)
+        if not tenant_id:
+            return None
+        return self._tenants.get(tenant_id)
+
+    def list_tenant_slugs(self) -> set[str]:
+        return set(self._slug_index.keys())
 
     def list_tenants(self) -> list[Tenant]:
         return list(self._tenants.values())
 
     def delete_tenant(self, tenant_id: str) -> None:
-        self._tenants.pop(tenant_id, None)
+        tenant = self._tenants.pop(tenant_id, None)
+        if tenant:
+            self._slug_index.pop(tenant.url_slug, None)
+        self._tenant_llm.pop(tenant_id, None)
+
+    def purge_tenant_data(self, tenant_id: str) -> list[str]:
+        user_ids = [m.user_id for m in self.list_memberships_for_tenant(tenant_id)]
+        for membership in self.list_memberships_for_tenant(tenant_id):
+            self.delete_membership(tenant_id, membership.user_id)
+        for client in self.list_clients(tenant_id):
+            self.delete_client(tenant_id, client.client_id)
+        for project in self.list_projects(tenant_id):
+            self.delete_project(tenant_id, project.project_id)
+        self._agent_runs = {
+            key: run
+            for key, run in self._agent_runs.items()
+            if key[0] != tenant_id
+        }
+        self._audit = [event for event in self._audit if event.tenant_id != tenant_id]
+        self.delete_tenant(tenant_id)
+        for user_id in user_ids:
+            if not self.list_memberships_for_user(user_id):
+                self.delete_user_profile(user_id)
+                self._platform_admins.discard(user_id)
+        return user_ids
+
+    def get_llm_baseline(self) -> LlmBaselineTemplate | None:
+        return self._llm_baseline
+
+    def put_llm_baseline(self, baseline: LlmBaselineTemplate) -> None:
+        self._llm_baseline = baseline
+
+    def get_tenant_llm_config(self, tenant_id: str) -> TenantLlmConfig | None:
+        return self._tenant_llm.get(tenant_id)
+
+    def put_tenant_llm_config(self, config: TenantLlmConfig) -> None:
+        self._tenant_llm[config.tenant_id] = config
+
+    def list_platform_admin_user_ids(self) -> list[str]:
+        return sorted(self._platform_admins)
 
     def put_user_profile(self, profile: UserProfile) -> None:
         self._profiles[profile.user_id] = profile
 
     def get_user_profile(self, user_id: str) -> UserProfile | None:
         return self._profiles.get(user_id)
+
+    def delete_user_profile(self, user_id: str) -> None:
+        self._profiles.pop(user_id, None)
 
     def put_membership(self, membership: TenantMembership) -> None:
         self._memberships[(membership.tenant_id, membership.user_id)] = membership

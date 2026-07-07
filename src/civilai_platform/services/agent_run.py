@@ -10,6 +10,7 @@ from typing import Any
 
 from civilai_platform.models.entities import AgentRun, AgentRunStatus, new_id, utc_now
 from civilai_platform.services import artifacts as artifact_svc
+from civilai_platform.services import llm_config as llm_config_svc
 from civilai_platform.services.audit import record_audit
 from civilai_platform.store.base import PlatformStore
 from civilai_platform.store.keys import agent_run_s3_prefix
@@ -112,6 +113,7 @@ def start_agent_run(
     )
     store.put_agent_run(run)
 
+    tenant_llm = llm_config_svc.get_tenant_llm_response(store, tenant_id).config
     context_payload: dict[str, Any] = {
         "project_id": project_id,
         "tenant_id": tenant_id,
@@ -123,6 +125,7 @@ def start_agent_run(
         "field_context": field_context or {},
         "proposed_use": proposed_use,
         "user_role": "analyst",
+        "llm_config": tenant_llm,
     }
 
     dry_run = os.getenv("CIVILAI_AGENT_DRY_RUN", "1").strip().lower() in {"1", "true", "yes"}

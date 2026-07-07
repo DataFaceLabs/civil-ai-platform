@@ -145,6 +145,15 @@ def main() -> int:
         boto3.Session(profile_name=os.environ.get("AWS_PROFILE"), region_name=REGION).client("s3")
     )
 
+    if STORE_BACKEND == "dynamodb":
+        from civilai_platform.store import get_store
+        from civilai_platform.services import platform_tenant as platform_tenant_svc
+
+        store = get_store()
+        platform_tenant_svc.ensure_platform_tenant(store)
+        count = platform_tenant_svc.backfill_platform_admin_memberships(store)
+        print(f"Platform tenant backfill: {count} platform admin membership(s)")
+
     print()
     print("Persistence ready. Restart platform API if it is already running:")
     print("  cd civil-ai-platform && make api")

@@ -5,10 +5,12 @@ from civilai_platform.models.entities import (
     AgentRun,
     AuditEvent,
     Client,
+    LlmBaselineTemplate,
     Project,
     ProjectState,
     Role,
     Tenant,
+    TenantLlmConfig,
     TenantMembership,
     UserProfile,
 )
@@ -28,12 +30,42 @@ class PlatformStore(ABC):
     @abstractmethod
     def delete_tenant(self, tenant_id: str) -> None: ...
 
+    @abstractmethod
+    def purge_tenant_data(self, tenant_id: str) -> list[str]:
+        """Remove all tenant-scoped records and return deleted user ids."""
+        ...
+
+    @abstractmethod
+    def get_tenant_by_slug(self, url_slug: str) -> Tenant | None: ...
+
+    @abstractmethod
+    def list_tenant_slugs(self) -> set[str]: ...
+
+    # --- LLM config ---
+    @abstractmethod
+    def get_llm_baseline(self) -> LlmBaselineTemplate | None: ...
+
+    @abstractmethod
+    def put_llm_baseline(self, baseline: LlmBaselineTemplate) -> None: ...
+
+    @abstractmethod
+    def get_tenant_llm_config(self, tenant_id: str) -> TenantLlmConfig | None: ...
+
+    @abstractmethod
+    def put_tenant_llm_config(self, config: TenantLlmConfig) -> None: ...
+
+    @abstractmethod
+    def list_platform_admin_user_ids(self) -> list[str]: ...
+
     # --- User profile ---
     @abstractmethod
     def put_user_profile(self, profile: UserProfile) -> None: ...
 
     @abstractmethod
     def get_user_profile(self, user_id: str) -> UserProfile | None: ...
+
+    @abstractmethod
+    def delete_user_profile(self, user_id: str) -> None: ...
 
     # --- Membership ---
     @abstractmethod
