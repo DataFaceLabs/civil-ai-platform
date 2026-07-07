@@ -125,7 +125,7 @@ def test_tenant_user_client_project_flow(client: TestClient) -> None:
     assert state.status_code == 200
     sections = state.json()["sections"]
     client_section = next(s for s in sections if s["step_key"] == "client")
-    assert client_section["fields"]["CLIENT_NAME"]["value"] == "Jay Beard"
+    assert client_section["fields"]["CLIENT_COMPANY"]["value"] == "Jay Beard"
 
     patch = client.patch(
         f"/v1/projects/{project_id}/state",
