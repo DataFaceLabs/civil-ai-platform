@@ -77,6 +77,17 @@ def get_tenant_llm_response(store: PlatformStore, tenant_id: str) -> LlmConfigRe
     )
 
 
+def restore_tenant_llm_from_baseline(store: PlatformStore, tenant_id: str) -> LlmConfigResponse:
+    """Replace tenant LLM config with a fresh copy of the current platform baseline."""
+    tenant_cfg = copy_baseline_to_tenant(store, tenant_id)
+    return LlmConfigResponse(
+        version=int(tenant_cfg.config.get("version", 1)),
+        baseline_version_at_copy=tenant_cfg.baseline_version_at_copy,
+        config=tenant_cfg.config,
+        updated_at=tenant_cfg.updated_at,
+    )
+
+
 def update_tenant_llm(
     store: PlatformStore,
     *,

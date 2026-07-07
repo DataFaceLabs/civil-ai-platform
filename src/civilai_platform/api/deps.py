@@ -55,5 +55,13 @@ def admin_ctx(ctx: Annotated[AuthContext, Depends(get_auth_context)]) -> AuthCon
     return ctx
 
 
+def platform_admin_tenant_ctx(
+    ctx: Annotated[AuthContext, Depends(get_auth_context)],
+) -> AuthContext:
+    require_platform_admin(ctx)
+    require_tenant(ctx)
+    return ctx
+
+
 def get_store_dep():
     return get_store()
