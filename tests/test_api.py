@@ -370,6 +370,12 @@ def test_tenant_llm_config(client: TestClient) -> None:
     boot = _bootstrap(client, "llm-admin", name="LLM Firm")
     tenant_id = boot["memberships"][0]["tenant_id"]
     h = _headers("llm-admin", tenant_id)
+    denied = client.get("/v1/tenant/llm-config", headers=h)
+    assert denied.status_code == 403
+
+    store = get_store()
+    store.set_platform_admin("llm-admin", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "llm-admin")
     res = client.get("/v1/tenant/llm-config", headers=h)
     assert res.status_code == 200
     assert res.json()["config"]["modelPreset"] == "haiku"
@@ -378,17 +384,46 @@ def test_tenant_llm_config(client: TestClient) -> None:
 def test_platform_admin_llm_baseline(client: TestClient) -> None:
     store = get_store()
     store.set_platform_admin("baseline-admin", True)
-    platform_tenant_svc.ensure_platform_admin_membership(store, "baseline-admin")
+    platform_membership = platform_tenant_svc.ensure_platform_admin_membership(
+        store, "baseline-admin"
+    )
     h = _headers("baseline-admin")
     res = client.get("/v1/admin/llm-baseline", headers=h)
     assert res.status_code == 200
     assert res.json()["config"]["version"] == 1
+
+    tenant_before = client.get(
+        "/v1/tenant/llm-config",
+        headers=h | {"X-Tenant-Id": platform_membership.tenant_id},
+    )
+    assert tenant_before.status_code == 200
+    assert tenant_before.json()["config"]["modelPreset"] == "haiku"
+
+    baseline_cfg = res.json()["config"]
+    baseline_cfg["modelPreset"] = "opus"
+    updated = client.patch(
+        "/v1/admin/llm-baseline",
+        json={"config": baseline_cfg},
+        headers=h,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["config"]["modelPreset"] == "opus"
+
+    tenant_after = client.get(
+        "/v1/tenant/llm-config",
+        headers=h | {"X-Tenant-Id": platform_membership.tenant_id},
+    )
+    assert tenant_after.status_code == 200
+    assert tenant_after.json()["config"]["modelPreset"] == "opus"
 
 
 def test_tenant_llm_invoke_uses_proxy(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
     boot = _bootstrap(client, "invoke-user", name="Invoke Firm")
     tenant_id = boot["memberships"][0]["tenant_id"]
     h = _headers("invoke-user", tenant_id)
+    store = get_store()
+    store.set_platform_admin("invoke-user", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "invoke-user")
 
     def _fake_invoke(self, body):  # noqa: ANN001
         assert body["user_prompt"]
@@ -420,11 +455,61 @@ def test_tenant_llm_invoke_uses_proxy(monkeypatch: pytest.MonkeyPatch, client: T
     assert "Draft" in res.json()["text"]
 
 
+def test_tenant_llm_invoke_maps_openai_gpt55_preset(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+) -> None:
+    boot = _bootstrap(client, "gpt55-user", name="GPT55 Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers("gpt55-user", tenant_id)
+    store = get_store()
+    store.set_platform_admin("gpt55-user", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "gpt55-user")
+
+    cfg = client.get("/v1/tenant/llm-config", headers=h).json()["config"]
+    cfg["modelPreset"] = "gpt55"
+    client.patch("/v1/tenant/llm-config", json={"config": cfg}, headers=h)
+
+    captured: dict[str, object] = {}
+
+    def _fake_invoke(self, body):  # noqa: ANN001
+        captured.update(body)
+        return {
+            "text": "Draft paragraph.",
+            "model_id": body["model_id"],
+            "latency_ms": 12,
+            "guardrail_warnings": [],
+            "parse_errors": [],
+            "web_search_trace": [],
+        }
+
+    monkeypatch.setattr(
+        "civilai_platform.services.data_proxy.DataProxyClient.invoke_llm",
+        _fake_invoke,
+    )
+    res = client.post(
+        "/v1/tenant/llm/invoke",
+        json={
+            "step_key": "zoning",
+            "user_prompt": "Review zoning fields.",
+            "field_context": {"ZONING_REGS": "R-1"},
+        },
+        headers=h,
+    )
+    assert res.status_code == 200
+    assert captured["model_id"] == "gpt-5.5"
+
+
 def test_tenant_llm_config_isolated(client: TestClient) -> None:
     a = _bootstrap(client, "llm-a", name="LLM A")
     b = _bootstrap(client, "llm-b", name="LLM B")
     tenant_a = a["memberships"][0]["tenant_id"]
     tenant_b = b["memberships"][0]["tenant_id"]
+    store = get_store()
+    store.set_platform_admin("llm-a", True)
+    store.set_platform_admin("llm-b", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "llm-a")
+    platform_tenant_svc.ensure_platform_admin_membership(store, "llm-b")
     h_a = _headers("llm-a", tenant_a)
     h_b = _headers("llm-b", tenant_b)
 
@@ -434,6 +519,39 @@ def test_tenant_llm_config_isolated(client: TestClient) -> None:
 
     cfg_b = client.get("/v1/tenant/llm-config", headers=h_b).json()["config"]
     assert cfg_b["modelPreset"] == "haiku"
+
+
+def test_create_tenant_copies_llm_baseline(store: MemoryStore) -> None:
+    from civilai_platform.models.api import TenantCreate
+    from civilai_platform.services import llm_config as llm_config_svc
+
+    tenant = tenant_svc.create_tenant(store, TenantCreate(name="Baseline Copy Firm"))
+    baseline = llm_config_svc.ensure_llm_baseline(store)
+    tenant_cfg = store.get_tenant_llm_config(tenant.tenant_id)
+    assert tenant_cfg is not None
+    assert tenant_cfg.baseline_version_at_copy == baseline.version
+    assert tenant_cfg.config["modelPreset"] == baseline.config["modelPreset"]
+
+
+def test_restore_tenant_llm_baseline(client: TestClient) -> None:
+    boot = _bootstrap(client, "restore-llm", name="Restore Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    store = get_store()
+    store.set_platform_admin("restore-llm", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "restore-llm")
+    h = _headers("restore-llm", tenant_id)
+
+    cfg = client.get("/v1/tenant/llm-config", headers=h).json()["config"]
+    cfg["modelPreset"] = "opus"
+    client.patch("/v1/tenant/llm-config", json={"config": cfg}, headers=h)
+    assert client.get("/v1/tenant/llm-config", headers=h).json()["config"]["modelPreset"] == "opus"
+
+    baseline = client.get("/v1/admin/llm-baseline", headers=_headers("restore-llm")).json()
+    restored = client.post("/v1/tenant/llm-config/restore-baseline", headers=h)
+    assert restored.status_code == 200
+    body = restored.json()
+    assert body["config"]["modelPreset"] == baseline["config"]["modelPreset"]
+    assert body["baseline_version_at_copy"] == baseline["version"]
 
 
 def test_suspended_tenant_blocks_public_login_and_api(client: TestClient) -> None:

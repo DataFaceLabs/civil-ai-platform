@@ -4,19 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from civilai_platform.model_presets import resolve_model_id
 from civilai_platform.services import llm_config as llm_config_svc
 from civilai_platform.services.audit import record_audit
 from civilai_platform.services.data_proxy import DataProxyClient
 from civilai_platform.store.base import PlatformStore
-
-MODEL_PRESET_IDS: dict[str, str] = {
-    "haiku": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    "sonnet": "us.anthropic.claude-sonnet-5",
-    "nova": "amazon.nova-lite-v1:0",
-    "opus": "us.anthropic.claude-opus-4-6-20260201-v1:0",
-    "gpt-4o-mini": "gpt-4o-mini",
-    "gpt-4o": "gpt-4o",
-}
 
 
 def _snake_guardrails(raw: dict[str, Any]) -> dict[str, Any]:
@@ -60,7 +52,7 @@ def invoke_tenant_section_llm(
     sections = tenant_cfg.get("sections") or {}
     section = sections.get(step_key) or {}
     preset = str(tenant_cfg.get("modelPreset", "haiku"))
-    model_id = MODEL_PRESET_IDS.get(preset, MODEL_PRESET_IDS["haiku"])
+    model_id = resolve_model_id(preset)
     web_search_cfg = dict(tenant_cfg.get("webSearch") or {})
     section_web_enabled = section.get("webSearchEnabled")
     web_enabled = (
