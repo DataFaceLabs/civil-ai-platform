@@ -1,0 +1,39 @@
+# Copy to terraform.tfvars (never commit secrets).
+
+aws_region = "us-east-1"
+
+# REQUIRED — your public IP for SSH
+allowed_ssh_cidr_blocks = ["YOUR.PUBLIC.IP/32"]
+
+# Start permissive for UAT smoke; tighten before external testers
+allowed_api_cidr_blocks = ["0.0.0.0/0"]
+
+serving_s3_uri = "s3://civilai-data/dev/serving/snapshot_date=2026-07-02/civil_ai_serving.duckdb"
+
+mapbox_access_token = "pk...."
+
+cors_origins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+]
+
+# Add Amplify default domain after first apply, e.g. https://develop.d1234.amplifyapp.com/fstudio/*/login/callback
+cognito_callback_urls = [
+  "http://localhost:5173/fstudio/*/login/callback",
+]
+cognito_logout_urls = [
+  "http://localhost:5173/fstudio/*/login",
+]
+
+# GitHub PAT (repo scope) for Amplify + optional EC2 clone
+github_access_token = "ghp_..."
+
+# Optional: store PAT in SSM first, then set name here for EC2 user_data
+# aws ssm put-parameter --name /civilai/uat/github-token --type SecureString --value ghp_...
+# github_token_parameter_name = "/civilai/uat/github-token"
+
+create_platform_http_api = true
+create_amplify_app       = true
+
+# Run ../../scripts/package-lambda.sh before apply when create_platform_http_api=true
+lambda_package_path = "../../../dist/platform-lambda.zip"
