@@ -2,12 +2,61 @@ variable "environment" {
   type = string
 }
 
-variable "cognito_user_pool" {
+variable "aws_region" {
+  type    = string
+  default = "us-east-1"
+}
+
+variable "cognito_user_pool_arn" {
+  type = string
+}
+
+variable "cognito_user_pool_id" {
+  type = string
+}
+
+variable "cognito_client_id" {
   type = string
 }
 
 variable "bedrock_policy_arn" {
   type = string
+}
+
+variable "dynamodb_table_arn" {
+  type = string
+}
+
+variable "app_bucket_arn" {
+  type = string
+}
+
+variable "data_api_base_url" {
+  type = string
+}
+
+variable "data_service_key_parameter" {
+  type = string
+}
+
+variable "data_service_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "create_http_api" {
+  type    = bool
+  default = false
+}
+
+variable "lambda_package_path" {
+  type        = string
+  default     = ""
+  description = "Path to platform Lambda zip; required when create_http_api=true."
+}
+
+locals {
+  name_prefix = "civilai-${var.environment}"
 }
 
 data "aws_iam_policy_document" "lambda" {
@@ -22,7 +71,10 @@ data "aws_iam_policy_document" "lambda" {
       "dynamodb:Query",
       "dynamodb:Scan",
     ]
-    resources = ["*"]
+    resources = [
+      var.dynamodb_table_arn,
+      "${var.dynamodb_table_arn}/index/*",
+    ]
   }
 
   statement {
@@ -32,10 +84,11 @@ data "aws_iam_policy_document" "lambda" {
       "s3:GetObject",
       "s3:PutObject",
       "s3:DeleteObject",
+      "s3:ListBucket",
     ]
     resources = [
-      "arn:aws:s3:::civilai-${var.environment}-app/*",
-      "arn:aws:s3:::civilai-${var.environment}-app/tenant/*/branding/*",
+      var.app_bucket_arn,
+      "${var.app_bucket_arn}/*",
     ]
   }
 
@@ -47,12 +100,24 @@ data "aws_iam_policy_document" "lambda" {
       "cognito-idp:AdminDisableUser",
       "cognito-idp:AdminGetUser",
     ]
-    resources = [var.cognito_user_pool]
+    resources = [var.cognito_user_pool_arn]
+  }
+
+  statement {
+    sid    = "ReadSecrets"
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+    ]
+    resources = [
+      "arn:aws:ssm:${var.aws_region}:*:parameter/civilai/${var.environment}/*",
+    ]
   }
 }
 
 resource "aws_iam_role" "lambda" {
-  name = "civilai-${var.environment}-platform-lambda"
+  name = "${local.name_prefix}-platform-lambda"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -64,7 +129,7 @@ resource "aws_iam_role" "lambda" {
 }
 
 resource "aws_iam_role_policy" "lambda" {
-  name   = "civilai-${var.environment}-platform-lambda"
+  name   = "${local.name_prefix}-platform-lambda"
   role   = aws_iam_role.lambda.id
   policy = data.aws_iam_policy_document.lambda.json
 }
@@ -74,10 +139,127 @@ resource "aws_iam_role_policy_attachment" "bedrock" {
   policy_arn = var.bedrock_policy_arn
 }
 
+resource "aws_iam_role_policy_attachment" "lambda_basic" {
+  count      = var.create_http_api ? 1 : 0
+  role       = aws_iam_role.lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_lambda_function" "platform" {
+  count = var.create_http_api ? 1 : 0
+
+  function_name = "${local.name_prefix}-api"
+  role          = aws_iam_role.lambda.arn
+  handler       = "civilai_platform.lambda_handler.handler"
+  runtime       = "python3.12"
+  timeout       = 29
+  memory_size   = 512
+
+  filename         = var.lambda_package_path
+  source_code_hash = filebase64sha256(var.lambda_package_path)
+
+  environment {
+    variables = {
+      CIVILAI_ENVIRONMENT        = var.environment
+      CIVILAI_DEV_AUTH           = "false"
+      CIVILAI_STORE_BACKEND      = "dynamodb"
+      CIVILAI_DYNAMODB_TABLE     = "civilai-app-${var.environment}"
+      CIVILAI_ARTIFACT_BACKEND   = "s3"
+      CIVILAI_APP_BUCKET         = replace(var.app_bucket_arn, "arn:aws:s3:::", "")
+      CIVILAI_DATA_API_BASE      = var.data_api_base_url
+      CIVILAI_DATA_SERVICE_KEY   = var.data_service_key
+      CIVILAI_COGNITO_USER_POOL_ID = var.cognito_user_pool_id
+      CIVILAI_COGNITO_APP_CLIENT_ID = var.cognito_client_id
+      AWS_REGION                 = var.aws_region
+    }
+  }
+}
+
+# Platform reads service key from SSM at cold start — wire via env or extend settings.py.
+# Until then, pass plaintext via tofu variable at deploy time (see uat README).
+
+resource "aws_apigatewayv2_api" "main" {
+  count         = var.create_http_api ? 1 : 0
+  name          = "${local.name_prefix}-http"
+  protocol_type = "HTTP"
+
+  cors_configuration {
+    allow_credentials = true
+    allow_headers     = ["authorization", "content-type", "x-request-id"]
+    allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    allow_origins     = ["*"]
+    max_age           = 300
+  }
+}
+
+resource "aws_apigatewayv2_authorizer" "cognito" {
+  count = var.create_http_api ? 1 : 0
+
+  api_id           = aws_apigatewayv2_api.main[0].id
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+  name             = "cognito"
+
+  jwt_configuration {
+    audience = [var.cognito_client_id]
+    issuer   = "https://cognito-idp.${var.aws_region}.amazonaws.com/${var.cognito_user_pool_id}"
+  }
+}
+
+resource "aws_apigatewayv2_integration" "lambda" {
+  count = var.create_http_api ? 1 : 0
+
+  api_id                 = aws_apigatewayv2_api.main[0].id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.platform[0].invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "default" {
+  count = var.create_http_api ? 1 : 0
+
+  api_id    = aws_apigatewayv2_api.main[0].id
+  route_key = "$default"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda[0].id}"
+
+  authorization_type = "JWT"
+  authorizer_id        = aws_apigatewayv2_authorizer.cognito[0].id
+}
+
+resource "aws_apigatewayv2_route" "health" {
+  count = var.create_http_api ? 1 : 0
+
+  api_id    = aws_apigatewayv2_api.main[0].id
+  route_key = "GET /health"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda[0].id}"
+}
+
+resource "aws_apigatewayv2_stage" "default" {
+  count = var.create_http_api ? 1 : 0
+
+  api_id      = aws_apigatewayv2_api.main[0].id
+  name        = "$default"
+  auto_deploy = true
+}
+
+resource "aws_lambda_permission" "apigw" {
+  count = var.create_http_api ? 1 : 0
+
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.platform[0].function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main[0].execution_arn}/*/*"
+}
+
 output "lambda_role_arn" {
   value = aws_iam_role.lambda.arn
 }
 
+output "lambda_function_name" {
+  value = var.create_http_api ? aws_lambda_function.platform[0].function_name : ""
+}
+
 output "api_endpoint" {
-  value = "https://api-${var.environment}.civil.ai"
+  value = var.create_http_api ? aws_apigatewayv2_api.main[0].api_endpoint : "https://api-${var.environment}.civil.ai"
 }
