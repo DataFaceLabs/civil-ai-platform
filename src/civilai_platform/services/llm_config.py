@@ -5,6 +5,8 @@ from civilai_platform.models.api import LlmConfigResponse
 from civilai_platform.models.entities import LlmBaselineTemplate, TenantLlmConfig, utc_now
 from civilai_platform.store.base import PlatformStore
 
+PLATFORM_TENANT_SLUG = "platform"
+
 
 def ensure_llm_baseline(store: PlatformStore) -> LlmBaselineTemplate:
     existing = store.get_llm_baseline()
@@ -45,6 +47,9 @@ def update_baseline(
         updated_by_user_id=actor_user_id,
     )
     store.put_llm_baseline(updated)
+    platform_tenant = store.get_tenant_by_slug(PLATFORM_TENANT_SLUG)
+    if platform_tenant:
+        copy_baseline_to_tenant(store, platform_tenant.tenant_id)
     return LlmConfigResponse(
         version=updated.version,
         config=updated.config,

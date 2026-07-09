@@ -9,6 +9,37 @@ import httpx
 
 from civilai_platform.settings import get_settings
 
+_DEFAULT_TIMEOUT_SEC = 30.0
+_DEFAULT_LLM_INVOKE_TIMEOUT_SEC = 180.0
+
+
+def llm_invoke_timeout_sec() -> float:
+    """Match civil-ai-data OpenAI client budget (120s) plus web-search headroom."""
+    raw = os.getenv("CIVILAI_DATA_LLM_INVOKE_TIMEOUT_SEC", "").strip()
+    if not raw:
+        return _DEFAULT_LLM_INVOKE_TIMEOUT_SEC
+    try:
+        return max(float(raw), 1.0)
+    except ValueError:
+        return _DEFAULT_LLM_INVOKE_TIMEOUT_SEC
+
+
+def _upstream_error_message(exc: httpx.HTTPStatusError) -> str:
+    try:
+        payload = exc.response.json()
+    except ValueError:
+        return exc.response.text.strip() or str(exc)
+    if isinstance(payload, dict):
+        detail = payload.get("detail")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+    return exc.response.text.strip() or str(exc)
+
 
 class DataProxyClient:
     """Calls civil-ai-data with service credentials and optional PII scope."""
@@ -19,7 +50,7 @@ class DataProxyClient:
         base_url: str | None = None,
         service_key: str | None = None,
         include_pii: bool = False,
-        timeout: float = 30.0,
+        timeout: float = _DEFAULT_TIMEOUT_SEC,
     ) -> None:
         settings = get_settings()
         self.base_url = (
@@ -44,12 +75,24 @@ class DataProxyClient:
         path: str,
         *,
         json: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> Any:
         url = f"{self.base_url}{path}"
-        with httpx.Client(timeout=self.timeout) as client:
-            resp = client.request(method, url, headers=self._headers(), json=json)
-            resp.raise_for_status()
-            return resp.json()
+        effective_timeout = self.timeout if timeout is None else timeout
+        try:
+            with httpx.Client(timeout=effective_timeout) as client:
+                resp = client.request(method, url, headers=self._headers(), json=json)
+                try:
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise RuntimeError(_upstream_error_message(exc)) from exc
+                return resp.json()
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(
+                f"Data API request timed out after {effective_timeout:.0f}s "
+                f"({method} {path}). For LLM invokes, increase "
+                "CIVILAI_DATA_LLM_INVOKE_TIMEOUT_SEC or disable web search."
+            ) from exc
 
     def get_section_facts(self, entity_id: str, section_id: str) -> dict[str, Any]:
         return self.request("GET", f"/v1/sections/{section_id}/facts/{entity_id}")
@@ -71,4 +114,9 @@ class DataProxyClient:
         return self.request("GET", f"/v1/fe/site/by-entity/{entity_id}")
 
     def invoke_llm(self, body: dict[str, Any]) -> dict[str, Any]:
-        return self.request("POST", "/v1/experimental/llm/invoke", json=body)
+        return self.request(
+            "POST",
+            "/v1/experimental/llm/invoke",
+            json=body,
+            timeout=llm_invoke_timeout_sec(),
+        )

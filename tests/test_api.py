@@ -384,11 +384,37 @@ def test_tenant_llm_config(client: TestClient) -> None:
 def test_platform_admin_llm_baseline(client: TestClient) -> None:
     store = get_store()
     store.set_platform_admin("baseline-admin", True)
-    platform_tenant_svc.ensure_platform_admin_membership(store, "baseline-admin")
+    platform_membership = platform_tenant_svc.ensure_platform_admin_membership(
+        store, "baseline-admin"
+    )
     h = _headers("baseline-admin")
     res = client.get("/v1/admin/llm-baseline", headers=h)
     assert res.status_code == 200
     assert res.json()["config"]["version"] == 1
+
+    tenant_before = client.get(
+        "/v1/tenant/llm-config",
+        headers=h | {"X-Tenant-Id": platform_membership.tenant_id},
+    )
+    assert tenant_before.status_code == 200
+    assert tenant_before.json()["config"]["modelPreset"] == "haiku"
+
+    baseline_cfg = res.json()["config"]
+    baseline_cfg["modelPreset"] = "opus"
+    updated = client.patch(
+        "/v1/admin/llm-baseline",
+        json={"config": baseline_cfg},
+        headers=h,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["config"]["modelPreset"] == "opus"
+
+    tenant_after = client.get(
+        "/v1/tenant/llm-config",
+        headers=h | {"X-Tenant-Id": platform_membership.tenant_id},
+    )
+    assert tenant_after.status_code == 200
+    assert tenant_after.json()["config"]["modelPreset"] == "opus"
 
 
 def test_tenant_llm_invoke_uses_proxy(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
@@ -427,6 +453,51 @@ def test_tenant_llm_invoke_uses_proxy(monkeypatch: pytest.MonkeyPatch, client: T
     )
     assert res.status_code == 200
     assert "Draft" in res.json()["text"]
+
+
+def test_tenant_llm_invoke_maps_openai_gpt55_preset(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+) -> None:
+    boot = _bootstrap(client, "gpt55-user", name="GPT55 Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers("gpt55-user", tenant_id)
+    store = get_store()
+    store.set_platform_admin("gpt55-user", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "gpt55-user")
+
+    cfg = client.get("/v1/tenant/llm-config", headers=h).json()["config"]
+    cfg["modelPreset"] = "gpt55"
+    client.patch("/v1/tenant/llm-config", json={"config": cfg}, headers=h)
+
+    captured: dict[str, object] = {}
+
+    def _fake_invoke(self, body):  # noqa: ANN001
+        captured.update(body)
+        return {
+            "text": "Draft paragraph.",
+            "model_id": body["model_id"],
+            "latency_ms": 12,
+            "guardrail_warnings": [],
+            "parse_errors": [],
+            "web_search_trace": [],
+        }
+
+    monkeypatch.setattr(
+        "civilai_platform.services.data_proxy.DataProxyClient.invoke_llm",
+        _fake_invoke,
+    )
+    res = client.post(
+        "/v1/tenant/llm/invoke",
+        json={
+            "step_key": "zoning",
+            "user_prompt": "Review zoning fields.",
+            "field_context": {"ZONING_REGS": "R-1"},
+        },
+        headers=h,
+    )
+    assert res.status_code == 200
+    assert captured["model_id"] == "gpt-5.5"
 
 
 def test_tenant_llm_config_isolated(client: TestClient) -> None:
