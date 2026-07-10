@@ -12,6 +12,7 @@ from civilai_platform.models.entities import AgentRun, AgentRunStatus, new_id, u
 from civilai_platform.services import artifacts as artifact_svc
 from civilai_platform.services import llm_config as llm_config_svc
 from civilai_platform.services.audit import record_audit
+from civilai_platform.services.search_policy import resolve_chat_prompts, resolve_search_run_policy
 from civilai_platform.store.base import PlatformStore
 from civilai_platform.store.keys import agent_run_s3_prefix
 
@@ -20,9 +21,22 @@ logger = logging.getLogger(__name__)
 _memory_agent_payloads: dict[str, bytes] = {}
 
 
+def _entity_id_from_state(store: PlatformStore, tenant_id: str, project_id: str) -> str | None:
+    state = store.get_project_state(tenant_id, project_id)
+    if not state:
+        return None
+    site_payload = state.site_payload
+    if isinstance(site_payload, dict):
+        raw = site_payload.get("entity_id")
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+    return None
+
+
 def _invoke_strands_agent(context_payload: dict[str, Any], *, dry_run: bool) -> dict[str, Any]:
     try:
         from civilai_agent.models.context import AgentWorkflow, WorkbenchContext
+        from civilai_agent.models.search_policy import SearchRunPolicy
         from civilai_agent.runner import run_agent
     except ImportError as exc:
         logger.warning("civilai-agent not installed: %s", exc)
@@ -35,6 +49,15 @@ def _invoke_strands_agent(context_payload: dict[str, Any], *, dry_run: bool) -> 
 
     workflow_raw = context_payload.get("workflow")
     workflow = AgentWorkflow(workflow_raw) if workflow_raw else None
+    policy_raw = context_payload.get("search_run_policy") or {}
+    search_run_policy = (
+        SearchRunPolicy.model_validate(policy_raw)
+        if isinstance(policy_raw, dict)
+        else SearchRunPolicy()
+    )
+    instructions_raw = context_payload.get("chat_instructions") or []
+    chat_instructions = tuple(str(item) for item in instructions_raw) if isinstance(instructions_raw, list) else ()
+
     context = WorkbenchContext(
         project_id=str(context_payload["project_id"]),
         entity_id=context_payload.get("entity_id"),
@@ -46,6 +69,14 @@ def _invoke_strands_agent(context_payload: dict[str, Any], *, dry_run: bool) -> 
         field_context=dict(context_payload.get("field_context") or {}),
         tenant_id=context_payload.get("tenant_id"),
         user_id=context_payload.get("user_id"),
+        search_run_policy=search_run_policy,
+        thread_memory=str(context_payload.get("thread_memory") or ""),
+        section_body_plain=str(context_payload.get("section_body_plain") or ""),
+        tenant_name=context_payload.get("tenant_name"),
+        project_name=context_payload.get("project_name"),
+        property_address=context_payload.get("property_address"),
+        chat_system_prompt=str(context_payload.get("chat_system_prompt") or ""),
+        chat_instructions=chat_instructions,
     )
     response = run_agent(context, dry_run=dry_run)
     return response.model_dump(mode="json")
@@ -93,6 +124,8 @@ def start_agent_run(
     workflow: str | None = None,
     field_context: dict[str, str] | None = None,
     proposed_use: str | None = None,
+    thread_memory: str = "",
+    section_body_plain: str = "",
 ) -> AgentRun:
     now = utc_now()
     run_id = new_id()
@@ -114,17 +147,36 @@ def start_agent_run(
     store.put_agent_run(run)
 
     tenant_llm = llm_config_svc.get_tenant_llm_response(store, tenant_id).config
+    tenant = store.get_tenant(tenant_id)
+    project = store.get_project(tenant_id, project_id)
+    resolved_entity_id = entity_id or _entity_id_from_state(store, tenant_id, project_id)
+    resolved_field_context = field_context or {}
+    search_run_policy = resolve_search_run_policy(
+        tenant_llm,
+        active_section_id=active_section_id,
+        field_context=resolved_field_context,
+    )
+    chat_system_prompt, chat_instructions = resolve_chat_prompts(tenant_llm)
+
     context_payload: dict[str, Any] = {
         "project_id": project_id,
         "tenant_id": tenant_id,
         "user_id": actor_user_id,
         "request": request_text,
-        "entity_id": entity_id,
+        "entity_id": resolved_entity_id,
         "active_section_id": active_section_id,
         "workflow": workflow,
-        "field_context": field_context or {},
+        "field_context": resolved_field_context,
         "proposed_use": proposed_use,
         "user_role": "analyst",
+        "thread_memory": thread_memory,
+        "section_body_plain": section_body_plain,
+        "tenant_name": tenant.name if tenant else None,
+        "project_name": project.name if project else None,
+        "property_address": project.address if project else None,
+        "search_run_policy": search_run_policy,
+        "chat_system_prompt": chat_system_prompt,
+        "chat_instructions": list(chat_instructions),
         "llm_config": tenant_llm,
     }
 

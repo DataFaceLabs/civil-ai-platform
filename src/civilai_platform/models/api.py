@@ -10,6 +10,7 @@ from civilai_platform.models.entities import (
     ContextDoc,
     FeasibilityDocumentRef,
     FieldValue,
+    MapExhibit,
     LlmBaselineTemplate,
     MembershipStatus,
     Project,
@@ -106,6 +107,8 @@ class TenantLlmInvokeRequest(BaseModel):
     user_prompt: str
     field_context: dict[str, str] = Field(default_factory=dict)
     search_context_hint: str = ""
+    invoke_mode: str = "section"
+    web_search_enabled: bool | None = None
 
 
 class LogoPresignResponse(BaseModel):
@@ -287,6 +290,7 @@ class ProjectResponse(BaseModel):
 class ProjectStatePatch(BaseModel):
     sections: list[Section] | None = None
     context_docs: list[ContextDoc] | None = None
+    map_exhibits: list[MapExhibit] | None = None
     proposed_use: str | None = None
     parcel: dict | None = None
     site_payload: dict | None = None
@@ -304,6 +308,7 @@ class ProjectStateResponse(BaseModel):
     tenant_id: str
     sections: list[Section]
     context_docs: list[ContextDoc]
+    map_exhibits: list[MapExhibit]
     proposed_use: str | None
     parcel: dict | None
     site_payload: dict | None
@@ -318,7 +323,7 @@ class ProjectStateResponse(BaseModel):
 
     @classmethod
     def from_entity(cls, s: ProjectState) -> "ProjectStateResponse":
-        return cls(**s.model_dump())
+        return cls.model_validate(s.model_dump())
 
 
 class AgentRunCreate(BaseModel):
@@ -328,6 +333,8 @@ class AgentRunCreate(BaseModel):
     workflow: str | None = None
     field_context: dict[str, str] = Field(default_factory=dict)
     proposed_use: str | None = None
+    thread_memory: str = ""
+    section_body_plain: str = ""
 
 
 class AgentRunResponse(BaseModel):

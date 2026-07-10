@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from civilai_platform.llm_defaults import BASE_GUARDRAILS
 from civilai_platform.model_presets import resolve_model_id
 from civilai_platform.services import llm_config as llm_config_svc
 from civilai_platform.services.audit import record_audit
 from civilai_platform.services.data_proxy import DataProxyClient
+from civilai_platform.services.search_policy import resolve_chat_prompts, resolve_search_run_policy
 from civilai_platform.store.base import PlatformStore
 
 
@@ -37,6 +39,49 @@ def _snake_web_search(raw: dict[str, Any], *, search_context_hint: str, enabled:
     }
 
 
+def _resolve_web_search_enabled(
+    *,
+    web_search_cfg: dict[str, Any],
+    section: dict[str, Any],
+    request_override: bool | None = None,
+) -> bool:
+    if request_override is not None:
+        return request_override
+    section_flag = section.get("webSearchEnabled")
+    if isinstance(section_flag, bool):
+        return section_flag
+    return bool(web_search_cfg.get("enabled", False))
+
+
+def _resolve_guardrails(
+    *,
+    section: dict[str, Any],
+    invoke_mode: str,
+) -> dict[str, Any]:
+    """Chat Q&A uses base guardrails; section drafts keep per-section disclaimers."""
+    if invoke_mode == "chat":
+        return _snake_guardrails(dict(BASE_GUARDRAILS))
+    return _snake_guardrails(dict(section.get("guardrails") or {}))
+
+
+def _resolve_system_prompt(
+    *,
+    tenant_cfg: dict[str, Any],
+    section: dict[str, Any],
+    invoke_mode: str,
+) -> str:
+    if invoke_mode == "chat":
+        chat_system, chat_instructions = resolve_chat_prompts(tenant_cfg)
+        system_prompt = chat_system
+        if chat_instructions:
+            instruction_lines = "\n".join(f"- {line}" for line in chat_instructions)
+            system_prompt = f"{system_prompt}\n\nInstructions:\n{instruction_lines}".strip()
+        return system_prompt
+
+    legacy_section_prompt = str(section.get("systemPrompt") or "")
+    return str(tenant_cfg.get("sectionSystemPrompt") or legacy_section_prompt or "")
+
+
 def invoke_tenant_section_llm(
     store: PlatformStore,
     *,
@@ -46,6 +91,8 @@ def invoke_tenant_section_llm(
     user_prompt: str,
     field_context: dict[str, str],
     search_context_hint: str = "",
+    invoke_mode: str = "section",
+    web_search_enabled: bool | None = None,
     client: DataProxyClient | None = None,
 ) -> dict[str, Any]:
     tenant_cfg = llm_config_svc.get_tenant_llm_response(store, tenant_id).config
@@ -53,24 +100,41 @@ def invoke_tenant_section_llm(
     section = sections.get(step_key) or {}
     preset = str(tenant_cfg.get("modelPreset", "haiku"))
     model_id = resolve_model_id(preset)
-    web_search_cfg = dict(tenant_cfg.get("webSearch") or {})
-    section_web_enabled = section.get("webSearchEnabled")
-    web_enabled = (
-        bool(section_web_enabled)
-        if isinstance(section_web_enabled, bool)
-        else bool(web_search_cfg.get("enabled", False))
+    system_prompt = _resolve_system_prompt(
+        tenant_cfg=tenant_cfg,
+        section=section,
+        invoke_mode=invoke_mode,
     )
+    web_search_cfg = dict(tenant_cfg.get("webSearch") or {})
+    if invoke_mode == "chat":
+        chat_search = resolve_search_run_policy(
+            tenant_cfg,
+            active_section_id=step_key,
+            field_context=field_context,
+        )
+        web_enabled = (
+            bool(web_search_enabled)
+            if web_search_enabled is not None
+            else bool(chat_search.get("enabled", False))
+        )
+        resolved_search_hint = search_context_hint or str(chat_search.get("search_context_hint") or "")
+    else:
+        web_enabled = _resolve_web_search_enabled(
+            web_search_cfg=web_search_cfg,
+            section=section,
+            request_override=web_search_enabled,
+        )
+        resolved_search_hint = search_context_hint or str(section.get("searchContextHint") or "")
     body = {
         "model_id": model_id,
-        "system_prompt": str(section.get("systemPrompt") or ""),
+        "system_prompt": system_prompt,
         "user_prompt": user_prompt,
         "field_context": field_context,
-        "response_mode": tenant_cfg.get("responseMode", "structured"),
-        "guardrails": _snake_guardrails(dict(section.get("guardrails") or {})),
+        "response_mode": "text" if invoke_mode == "chat" else tenant_cfg.get("responseMode", "structured"),
+        "guardrails": _resolve_guardrails(section=section, invoke_mode=invoke_mode),
         "web_search": _snake_web_search(
             web_search_cfg,
-            search_context_hint=search_context_hint
-            or str(section.get("searchContextHint") or ""),
+            search_context_hint=resolved_search_hint,
             enabled=web_enabled,
         ),
     }

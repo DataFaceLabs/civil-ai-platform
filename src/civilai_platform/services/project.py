@@ -141,6 +141,14 @@ def get_project_state(store: PlatformStore, tenant_id: str, project_id: str) -> 
     return ProjectStateResponse.from_entity(state)
 
 
+def _merge_project_state(state: ProjectState, patch: ProjectStatePatch) -> ProjectState:
+    """Re-validate nested section/field models after patch (model_copy keeps raw dicts)."""
+    merged = state.model_dump()
+    merged.update(patch.model_dump(exclude_unset=True))
+    merged["updated_at"] = utc_now()
+    return ProjectState.model_validate(merged)
+
+
 def patch_project_state(
     store: PlatformStore,
     *,
@@ -152,8 +160,7 @@ def patch_project_state(
     state = store.get_project_state(tenant_id, project_id)
     if not state:
         raise ValueError("Project state not found")
-    updates = patch.model_dump(exclude_unset=True)
-    updated = state.model_copy(update={**updates, "updated_at": utc_now()})
+    updated = _merge_project_state(state, patch)
     store.put_project_state(updated)
     project = store.get_project(tenant_id, project_id)
     if project:
