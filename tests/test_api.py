@@ -482,7 +482,7 @@ def test_tenant_llm_invoke_uses_proxy(monkeypatch: pytest.MonkeyPatch, client: T
     store.set_platform_admin("invoke-user", True)
     platform_tenant_svc.ensure_platform_admin_membership(store, "invoke-user")
 
-    def _fake_invoke(self, body):  # noqa: ANN001
+    def _fake_invoke(self, body, *, step_key=None, **_kwargs):  # noqa: ANN001
         assert body["user_prompt"]
         assert body["system_prompt"]
         return {
@@ -512,6 +512,96 @@ def test_tenant_llm_invoke_uses_proxy(monkeypatch: pytest.MonkeyPatch, client: T
     assert "Draft" in res.json()["text"]
 
 
+def test_tenant_llm_invoke_draft_mode_forces_text_and_higher_token_cap(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+) -> None:
+    boot = _bootstrap(client, "draft-invoke-user", name="Draft Invoke Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers("draft-invoke-user", tenant_id)
+    store = get_store()
+    store.set_platform_admin("draft-invoke-user", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "draft-invoke-user")
+
+    captured: dict[str, object] = {}
+
+    def _fake_invoke(self, body, *, step_key=None, **_kwargs):  # noqa: ANN001
+        captured.update(body)
+        return {
+            "text": "## Parcel\n\nMerged draft body.",
+            "model_id": body["model_id"],
+            "latency_ms": 15,
+            "guardrail_warnings": [],
+            "parse_errors": [],
+            "web_search_trace": [],
+        }
+
+    monkeypatch.setattr(
+        "civilai_platform.services.data_proxy.DataProxyClient.invoke_llm",
+        _fake_invoke,
+    )
+    res = client.post(
+        "/v1/tenant/llm/invoke",
+        json={
+            "step_key": "draft",
+            "user_prompt": "Polish merged sections.",
+            "field_context": {"PROPERTY_ADDRESS": "123 Main St"},
+        },
+        headers=h,
+    )
+    assert res.status_code == 200
+    assert captured["response_mode"] == "text"
+    assert captured["guardrails"]["max_output_tokens"] == 4096
+    assert captured["web_search"]["enabled"] is False
+
+
+def test_tenant_llm_invoke_draft_disables_web_search_even_when_global_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+) -> None:
+    boot = _bootstrap(client, "draft-search-user", name="Draft Search Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers("draft-search-user", tenant_id)
+    store = get_store()
+    store.set_platform_admin("draft-search-user", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "draft-search-user")
+
+    cfg = client.get("/v1/tenant/llm-config", headers=h).json()["config"]
+    cfg["webSearch"]["enabled"] = True
+    cfg["sections"]["draft"]["webSearchEnabled"] = True
+    client.patch("/v1/tenant/llm-config", json={"config": cfg}, headers=h)
+
+    captured: dict[str, object] = {}
+
+    def _fake_invoke(self, body, *, step_key=None):  # noqa: ANN001
+        captured.update(body)
+        return {
+            "text": "## Parcel\n\nMerged draft body.",
+            "model_id": body["model_id"],
+            "latency_ms": 15,
+            "guardrail_warnings": [],
+            "parse_errors": [],
+            "web_search_trace": [],
+        }
+
+    monkeypatch.setattr(
+        "civilai_platform.services.data_proxy.DataProxyClient.invoke_llm",
+        _fake_invoke,
+    )
+    res = client.post(
+        "/v1/tenant/llm/invoke",
+        json={
+            "step_key": "draft",
+            "user_prompt": "Polish merged sections.",
+            "field_context": {"PROPERTY_ADDRESS": "123 Main St"},
+            "web_search_enabled": True,
+        },
+        headers=h,
+    )
+    assert res.status_code == 200
+    assert captured["web_search"]["enabled"] is False
+
+
 def test_tenant_llm_invoke_chat_mode_forces_text_and_disables_search(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
@@ -525,7 +615,7 @@ def test_tenant_llm_invoke_chat_mode_forces_text_and_disables_search(
 
     captured: dict[str, object] = {}
 
-    def _fake_invoke(self, body):  # noqa: ANN001
+    def _fake_invoke(self, body, *, step_key=None, **_kwargs):  # noqa: ANN001
         captured.update(body)
         return {
             "text": "Plain chat answer.",
@@ -573,7 +663,7 @@ def test_tenant_llm_invoke_maps_openai_gpt55_preset(
 
     captured: dict[str, object] = {}
 
-    def _fake_invoke(self, body):  # noqa: ANN001
+    def _fake_invoke(self, body, *, step_key=None, **_kwargs):  # noqa: ANN001
         captured.update(body)
         return {
             "text": "Draft paragraph.",
@@ -599,6 +689,52 @@ def test_tenant_llm_invoke_maps_openai_gpt55_preset(
     )
     assert res.status_code == 200
     assert captured["model_id"] == "gpt-5.5"
+
+
+def test_tenant_llm_invoke_uses_section_model_override(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+) -> None:
+    boot = _bootstrap(client, "section-model-user", name="Section Model Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers("section-model-user", tenant_id)
+    store = get_store()
+    store.set_platform_admin("section-model-user", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "section-model-user")
+
+    cfg = client.get("/v1/tenant/llm-config", headers=h).json()["config"]
+    cfg["modelPreset"] = "haiku"
+    cfg["sections"]["zoning"]["modelPreset"] = "opus"
+    client.patch("/v1/tenant/llm-config", json={"config": cfg}, headers=h)
+
+    captured: dict[str, object] = {}
+
+    def _fake_invoke(self, body, *, step_key=None, **_kwargs):  # noqa: ANN001
+        captured.update(body)
+        return {
+            "text": "Draft paragraph.",
+            "model_id": body["model_id"],
+            "latency_ms": 12,
+            "guardrail_warnings": [],
+            "parse_errors": [],
+            "web_search_trace": [],
+        }
+
+    monkeypatch.setattr(
+        "civilai_platform.services.data_proxy.DataProxyClient.invoke_llm",
+        _fake_invoke,
+    )
+    res = client.post(
+        "/v1/tenant/llm/invoke",
+        json={
+            "step_key": "zoning",
+            "user_prompt": "Review zoning fields.",
+            "field_context": {"ZONING_REGS": "R-1"},
+        },
+        headers=h,
+    )
+    assert res.status_code == 200
+    assert captured["model_id"] == "us.anthropic.claude-opus-4-6-20260201-v1:0"
 
 
 def test_tenant_llm_config_isolated(client: TestClient) -> None:

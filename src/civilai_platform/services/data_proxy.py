@@ -11,17 +11,38 @@ from civilai_platform.settings import get_settings
 
 _DEFAULT_TIMEOUT_SEC = 30.0
 _DEFAULT_LLM_INVOKE_TIMEOUT_SEC = 180.0
+_DEFAULT_DRAFT_LLM_INVOKE_TIMEOUT_SEC = 660.0
 
 
-def llm_invoke_timeout_sec() -> float:
-    """Match civil-ai-data OpenAI client budget (120s) plus web-search headroom."""
-    raw = os.getenv("CIVILAI_DATA_LLM_INVOKE_TIMEOUT_SEC", "").strip()
+def _read_timeout_env(name: str, default: float) -> float:
+    raw = os.getenv(name, "").strip()
     if not raw:
-        return _DEFAULT_LLM_INVOKE_TIMEOUT_SEC
+        return default
     try:
         return max(float(raw), 1.0)
     except ValueError:
-        return _DEFAULT_LLM_INVOKE_TIMEOUT_SEC
+        return default
+
+
+def llm_invoke_timeout_sec(*, step_key: str | None = None) -> float:
+    """Match civil-ai-data OpenAI client budget (120s) plus web-search headroom."""
+    if step_key == "draft":
+        return _read_timeout_env(
+            "CIVILAI_DATA_LLM_DRAFT_INVOKE_TIMEOUT_SEC",
+            _DEFAULT_DRAFT_LLM_INVOKE_TIMEOUT_SEC,
+        )
+    return _read_timeout_env(
+        "CIVILAI_DATA_LLM_INVOKE_TIMEOUT_SEC",
+        _DEFAULT_LLM_INVOKE_TIMEOUT_SEC,
+    )
+
+
+def llm_api_base(facts_base: str | None = None) -> str:
+    """Optional split base URL for experimental LLM invokes (dev: local API, facts stay on EC2)."""
+    override = os.getenv("CIVILAI_DATA_LLM_API_BASE", "").strip()
+    if override:
+        return override.rstrip("/")
+    return (facts_base or os.getenv("CIVILAI_DATA_API_BASE", "http://localhost:8000")).rstrip("/")
 
 
 def _upstream_error_message(exc: httpx.HTTPStatusError) -> str:
@@ -76,8 +97,9 @@ class DataProxyClient:
         *,
         json: dict[str, Any] | None = None,
         timeout: float | None = None,
+        base_url: str | None = None,
     ) -> Any:
-        url = f"{self.base_url}{path}"
+        url = f"{(base_url or self.base_url).rstrip('/')}{path}"
         effective_timeout = self.timeout if timeout is None else timeout
         try:
             with httpx.Client(timeout=effective_timeout) as client:
@@ -88,10 +110,16 @@ class DataProxyClient:
                     raise RuntimeError(_upstream_error_message(exc)) from exc
                 return resp.json()
         except httpx.TimeoutException as exc:
+            hint = (
+                "CIVILAI_DATA_LLM_DRAFT_INVOKE_TIMEOUT_SEC"
+                if path.endswith("/v1/experimental/llm/invoke")
+                and effective_timeout >= _DEFAULT_DRAFT_LLM_INVOKE_TIMEOUT_SEC
+                else "CIVILAI_DATA_LLM_INVOKE_TIMEOUT_SEC"
+            )
             raise RuntimeError(
                 f"Data API request timed out after {effective_timeout:.0f}s "
-                f"({method} {path}). For LLM invokes, increase "
-                "CIVILAI_DATA_LLM_INVOKE_TIMEOUT_SEC or disable web search."
+                f"({method} {path}). For LLM invokes, increase {hint} "
+                "or disable web search."
             ) from exc
 
     def get_section_facts(self, entity_id: str, section_id: str) -> dict[str, Any]:
@@ -113,10 +141,11 @@ class DataProxyClient:
     def get_site(self, entity_id: str) -> dict[str, Any]:
         return self.request("GET", f"/v1/fe/site/by-entity/{entity_id}")
 
-    def invoke_llm(self, body: dict[str, Any]) -> dict[str, Any]:
+    def invoke_llm(self, body: dict[str, Any], *, step_key: str | None = None) -> dict[str, Any]:
         return self.request(
             "POST",
             "/v1/experimental/llm/invoke",
             json=body,
-            timeout=llm_invoke_timeout_sec(),
+            timeout=llm_invoke_timeout_sec(step_key=step_key),
+            base_url=llm_api_base(self.base_url),
         )

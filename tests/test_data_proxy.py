@@ -3,7 +3,7 @@
 import httpx
 import respx
 
-from civilai_platform.services.data_proxy import DataProxyClient, llm_invoke_timeout_sec
+from civilai_platform.services.data_proxy import DataProxyClient, llm_api_base, llm_invoke_timeout_sec
 
 
 @respx.mock
@@ -55,13 +55,47 @@ def test_data_proxy_get_site() -> None:
     assert route.called
 
 
+def test_llm_api_base_prefers_override(monkeypatch) -> None:
+    monkeypatch.setenv("CIVILAI_DATA_API_BASE", "http://ec2.test")
+    monkeypatch.setenv("CIVILAI_DATA_LLM_API_BASE", "http://local-llm.test")
+    assert llm_api_base() == "http://local-llm.test"
+
+
+def test_llm_api_base_falls_back_to_facts_base(monkeypatch) -> None:
+    monkeypatch.delenv("CIVILAI_DATA_LLM_API_BASE", raising=False)
+    monkeypatch.setenv("CIVILAI_DATA_API_BASE", "http://ec2.test")
+    assert llm_api_base() == "http://ec2.test"
+
+
+@respx.mock
+def test_data_proxy_invoke_llm_uses_llm_api_base_override(monkeypatch) -> None:
+    monkeypatch.setenv("CIVILAI_DATA_API_BASE", "http://facts.test")
+    monkeypatch.setenv("CIVILAI_DATA_LLM_API_BASE", "http://llm.test")
+    route = respx.post("http://llm.test/v1/experimental/llm/invoke").mock(
+        return_value=httpx.Response(200, json={"text": "ok", "model_id": "haiku"})
+    )
+    client = DataProxyClient(base_url="http://facts.test", timeout=30.0)
+    result = client.invoke_llm({"user_prompt": "hello"})
+    assert result["text"] == "ok"
+    assert route.called
+
+
 def test_llm_invoke_timeout_default() -> None:
     assert llm_invoke_timeout_sec() == 180.0
+
+
+def test_llm_invoke_timeout_draft_default() -> None:
+    assert llm_invoke_timeout_sec(step_key="draft") == 660.0
 
 
 def test_llm_invoke_timeout_from_env(monkeypatch) -> None:
     monkeypatch.setenv("CIVILAI_DATA_LLM_INVOKE_TIMEOUT_SEC", "240")
     assert llm_invoke_timeout_sec() == 240.0
+
+
+def test_llm_invoke_draft_timeout_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("CIVILAI_DATA_LLM_DRAFT_INVOKE_TIMEOUT_SEC", "420")
+    assert llm_invoke_timeout_sec(step_key="draft") == 420.0
 
 
 @respx.mock
@@ -75,3 +109,16 @@ def test_data_proxy_invoke_llm_uses_longer_timeout(monkeypatch) -> None:
     assert result["text"] == "ok"
     assert route.called
     assert route.calls[0].request.extensions["timeout"]["connect"] == 150.0
+
+
+@respx.mock
+def test_data_proxy_invoke_llm_draft_uses_draft_timeout(monkeypatch) -> None:
+    monkeypatch.setenv("CIVILAI_DATA_LLM_DRAFT_INVOKE_TIMEOUT_SEC", "390")
+    route = respx.post("http://data.test/v1/experimental/llm/invoke").mock(
+        return_value=httpx.Response(200, json={"text": "ok", "model_id": "haiku"})
+    )
+    client = DataProxyClient(base_url="http://data.test", timeout=30.0)
+    result = client.invoke_llm({"user_prompt": "hello"}, step_key="draft")
+    assert result["text"] == "ok"
+    assert route.called
+    assert route.calls[0].request.extensions["timeout"]["connect"] == 390.0

@@ -106,6 +106,33 @@ def _section_config(step_key: str) -> dict[str, Any]:
                 ),
             }
         )
+    elif step_key == "draft":
+        cfg.update(
+            {
+                "userPromptTemplate": (
+                    "Polish the merged feasibility study section content below into a cohesive, "
+                    "client-ready report body.\n\n"
+                    "Use h2 headings for each major section that has source content (for example "
+                    "Parcel, Zoning, Environmental, Utilities, Access, Recommendations). Do not "
+                    "duplicate section titles in body paragraphs. Preserve factual content from "
+                    "the merged sections. Use concise professional engineering prose.\n\n"
+                    "Site: {{field.PROPERTY_ADDRESS}}\n"
+                    "Governing jurisdiction: {{field.GOVERNING_JURIS}}\n"
+                    "Proposed development: {{field.PROPOSED_DEVELOPMENT}}"
+                ),
+                "inputFieldCodes": [
+                    "PROPERTY_ADDRESS",
+                    "GOVERNING_JURIS",
+                    "PROPOSED_DEVELOPMENT",
+                ],
+                "guardrails": {
+                    **BASE_GUARDRAILS,
+                    "maxOutputTokens": 4096,
+                },
+                "webSearchEnabled": False,
+                "searchContextHint": "",
+            }
+        )
     return cfg
 
 

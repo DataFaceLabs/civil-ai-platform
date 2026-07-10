@@ -34,6 +34,18 @@ def test_resolve_web_search_enabled_inherits_global() -> None:
     )
 
 
+def test_resolve_web_search_enabled_draft_always_off() -> None:
+    assert (
+        llm_invoke_svc._resolve_web_search_enabled(
+            web_search_cfg={"enabled": True},
+            section={"webSearchEnabled": True},
+            request_override=True,
+            step_key="draft",
+        )
+        is False
+    )
+
+
 def test_resolve_guardrails_chat_uses_base_without_section_disclaimers() -> None:
     section = {
         "guardrails": {
@@ -49,3 +61,55 @@ def test_resolve_guardrails_chat_uses_base_without_section_disclaimers() -> None
 
     assert chat["required_disclaimers"] == []
     assert section_guardrails["required_disclaimers"] == ["boundary only", "confirm with provider"]
+
+
+def test_resolve_guardrails_draft_raises_output_token_floor() -> None:
+    section = {"guardrails": {"maxOutputTokens": 1024}}
+    guardrails = llm_invoke_svc._resolve_guardrails(
+        section=section,
+        invoke_mode="section",
+        step_key="draft",
+    )
+    assert guardrails["max_output_tokens"] == 4096
+
+
+def test_resolve_response_mode_draft_uses_text() -> None:
+    assert (
+        llm_invoke_svc._resolve_response_mode(
+            tenant_cfg={"responseMode": "structured"},
+            invoke_mode="section",
+            step_key="draft",
+        )
+        == "text"
+    )
+
+
+def test_resolve_model_preset_section_override() -> None:
+    assert (
+        llm_invoke_svc._resolve_model_preset(
+            tenant_cfg={"modelPreset": "haiku"},
+            section={"modelPreset": "opus"},
+        )
+        == "opus"
+    )
+
+
+def test_resolve_model_preset_inherits_global() -> None:
+    assert (
+        llm_invoke_svc._resolve_model_preset(
+            tenant_cfg={"modelPreset": "sonnet"},
+            section={},
+        )
+        == "sonnet"
+    )
+
+
+def test_resolve_response_mode_section_honors_tenant_structured() -> None:
+    assert (
+        llm_invoke_svc._resolve_response_mode(
+            tenant_cfg={"responseMode": "structured"},
+            invoke_mode="section",
+            step_key="zoning",
+        )
+        == "structured"
+    )
