@@ -44,7 +44,11 @@ def _resolve_web_search_enabled(
     web_search_cfg: dict[str, Any],
     section: dict[str, Any],
     request_override: bool | None = None,
+    step_key: str = "",
 ) -> bool:
+    # Draft assembly polishes merged section narratives; web search adds latency without benefit.
+    if step_key == "draft":
+        return False
     if request_override is not None:
         return request_override
     section_flag = section.get("webSearchEnabled")
@@ -57,11 +61,39 @@ def _resolve_guardrails(
     *,
     section: dict[str, Any],
     invoke_mode: str,
+    step_key: str = "",
 ) -> dict[str, Any]:
     """Chat Q&A uses base guardrails; section drafts keep per-section disclaimers."""
     if invoke_mode == "chat":
         return _snake_guardrails(dict(BASE_GUARDRAILS))
-    return _snake_guardrails(dict(section.get("guardrails") or {}))
+    guardrails = _snake_guardrails(dict(section.get("guardrails") or {}))
+    # Full-document assembly needs a much larger prose budget than single-section drafts.
+    if step_key == "draft":
+        guardrails["max_output_tokens"] = max(int(guardrails["max_output_tokens"]), 4096)
+    return guardrails
+
+
+def _resolve_response_mode(
+    *,
+    tenant_cfg: dict[str, Any],
+    invoke_mode: str,
+    step_key: str,
+) -> str:
+    """Draft document assembly returns Markdown prose, not structured JSON."""
+    if invoke_mode == "chat" or step_key == "draft":
+        return "text"
+    return str(tenant_cfg.get("responseMode", "structured"))
+
+
+def _resolve_model_preset(
+    *,
+    tenant_cfg: dict[str, Any],
+    section: dict[str, Any],
+) -> str:
+    section_preset = section.get("modelPreset")
+    if isinstance(section_preset, str) and section_preset.strip():
+        return section_preset.strip()
+    return str(tenant_cfg.get("modelPreset", "haiku"))
 
 
 def _resolve_system_prompt(
@@ -98,7 +130,7 @@ def invoke_tenant_section_llm(
     tenant_cfg = llm_config_svc.get_tenant_llm_response(store, tenant_id).config
     sections = tenant_cfg.get("sections") or {}
     section = sections.get(step_key) or {}
-    preset = str(tenant_cfg.get("modelPreset", "haiku"))
+    preset = _resolve_model_preset(tenant_cfg=tenant_cfg, section=section)
     model_id = resolve_model_id(preset)
     system_prompt = _resolve_system_prompt(
         tenant_cfg=tenant_cfg,
@@ -123,6 +155,7 @@ def invoke_tenant_section_llm(
             web_search_cfg=web_search_cfg,
             section=section,
             request_override=web_search_enabled,
+            step_key=step_key,
         )
         resolved_search_hint = search_context_hint or str(section.get("searchContextHint") or "")
     body = {
@@ -130,8 +163,16 @@ def invoke_tenant_section_llm(
         "system_prompt": system_prompt,
         "user_prompt": user_prompt,
         "field_context": field_context,
-        "response_mode": "text" if invoke_mode == "chat" else tenant_cfg.get("responseMode", "structured"),
-        "guardrails": _resolve_guardrails(section=section, invoke_mode=invoke_mode),
+        "response_mode": _resolve_response_mode(
+            tenant_cfg=tenant_cfg,
+            invoke_mode=invoke_mode,
+            step_key=step_key,
+        ),
+        "guardrails": _resolve_guardrails(
+            section=section,
+            invoke_mode=invoke_mode,
+            step_key=step_key,
+        ),
         "web_search": _snake_web_search(
             web_search_cfg,
             search_context_hint=resolved_search_hint,
@@ -139,7 +180,7 @@ def invoke_tenant_section_llm(
         ),
     }
     proxy = client or DataProxyClient()
-    result = proxy.invoke_llm(body)
+    result = proxy.invoke_llm(body, step_key=step_key)
     record_audit(
         tenant_id=tenant_id,
         actor_user_id=actor_user_id,
