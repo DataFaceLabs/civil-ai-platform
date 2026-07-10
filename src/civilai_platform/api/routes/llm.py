@@ -121,6 +121,8 @@ def invoke_tenant_llm(
             user_prompt=body.user_prompt,
             field_context=body.field_context,
             search_context_hint=body.search_context_hint,
+            invoke_mode=body.invoke_mode,
+            web_search_enabled=body.web_search_enabled,
         )
     except Exception as exc:
         raise HTTPException(502, f"LLM invoke failed: {exc}") from exc

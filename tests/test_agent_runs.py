@@ -59,6 +59,23 @@ def test_agent_run_create_and_get(client: TestClient) -> None:
     assert body["message"]
     assert body["s3_prefix"].endswith("/")
 
+    chat_run = client.post(
+        f"/v1/projects/{project_id}/agent-runs",
+        json={
+            "request": "What should I verify for utilities?",
+            "active_section_id": "utilities",
+            "workflow": "assistant_chat",
+            "thread_memory": "Earlier: analyst asked about water.",
+            "section_body_plain": "Draft utilities paragraph.",
+        },
+        headers=headers,
+    )
+    assert chat_run.status_code == 201
+    chat_body = chat_run.json()
+    assert chat_body["status"] == "succeeded"
+    assert chat_body["workflow"] == "assistant_chat"
+    assert chat_body["message"]
+
     fetched = client.get(
         f"/v1/projects/{project_id}/agent-runs/{body['run_id']}",
         headers=headers,

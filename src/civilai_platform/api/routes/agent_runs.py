@@ -48,6 +48,8 @@ def create_agent_run(
         workflow=body.workflow,
         field_context=body.field_context,
         proposed_use=body.proposed_use,
+        thread_memory=body.thread_memory,
+        section_body_plain=body.section_body_plain,
     )
     return AgentRunResponse.from_entity(run)
 

@@ -146,6 +146,16 @@ data "aws_iam_policy_document" "ec2" {
     ]
     }
   }
+
+  statement {
+    sid    = "BedrockInvoke"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "ec2" {

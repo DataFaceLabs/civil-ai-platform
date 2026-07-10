@@ -21,6 +21,24 @@ SHARED_SYSTEM_PROMPT = (
     "If field values are empty or ambiguous, state what is unknown and recommend verification."
 )
 
+DEFAULT_CHAT_CONFIG: dict[str, Any] = {
+    "systemPrompt": (
+        "You are the civil.ai assistant helping analysts draft land-development feasibility studies.\n"
+        "Use governed field values and conversation context. Do not invent facts, permits, or utility commitments.\n"
+        "Utility service area boundaries do not confirm capacity, pressure, or will-serve."
+    ),
+    "instructions": [
+        "Respond in clear plain text for the chat panel.",
+        "Answer factual questions directly; do not output a full section draft unless the analyst explicitly asks you to rewrite the section.",
+        "Answer from governed field values first; supplement only with web search URLs/snippets returned in this run.",
+        "If information is still missing, state what is unknown and which agency or document to verify — do not invent contacts.",
+        "For contact answers, format each agency as its own block: name, address, phone, email when available.",
+        "Cite URLs only when returned by web_search_deduped in this run.",
+    ],
+    "webSearchEnabled": False,
+    "searchContextHint": "{GOVERNING_JURIS} utility provider permitting contact OSSF {active_section}",
+}
+
 BASE_GUARDRAILS: dict[str, Any] = {
     "maxOutputTokens": 1024,
     "temperature": 0.2,
@@ -38,7 +56,6 @@ def _section_config(step_key: str) -> dict[str, Any]:
     title = step_key.replace("_", " ").title()
     cfg: dict[str, Any] = {
         "stepKey": step_key,
-        "systemPrompt": SHARED_SYSTEM_PROMPT,
         "userPromptTemplate": (
             f"Review the {title} section field values and suggest concise feasibility study language."
         ),
@@ -70,11 +87,23 @@ def _section_config(step_key: str) -> dict[str, Any]:
                     "Water: {{field.WATER_SERVICE}}\n"
                     "Wastewater: {{field.WASTEWATER_SERVICE}}"
                 ),
-                "inputFieldCodes": ["WATER_SERVICE", "WASTEWATER_SERVICE"],
+                "inputFieldCodes": [
+                    "WATER_SERVICE",
+                    "WASTEWATER_SERVICE",
+                    "ELECTRIC_PROVIDER",
+                    "FIRE_PROTECTION",
+                    "OSSF_REQUIREMENTS",
+                    "GOVERNING_JURIS",
+                    "PROPERTY_ADDRESS",
+                ],
                 "guardrails": {
                     **BASE_GUARDRAILS,
                     "requiredDisclaimers": ["boundary only", "confirm with provider"],
                 },
+                "searchContextHint": (
+                    "Prefer PUC Texas CCN maps, municipal utility provider pages, and TCEQ OSSF "
+                    "guidance for {{field.GOVERNING_JURIS}}."
+                ),
             }
         )
     return cfg
@@ -86,6 +115,7 @@ def default_llm_lab_config() -> dict[str, Any]:
         "version": 1,
         "modelPreset": "haiku",
         "responseMode": "structured",
+        "sectionSystemPrompt": SHARED_SYSTEM_PROMPT,
         "webSearch": {
             "enabled": False,
             "executionMode": "server",
@@ -104,5 +134,6 @@ def default_llm_lab_config() -> dict[str, Any]:
             "searchDepth": "basic",
             "includeTraceInResponse": True,
         },
+        "chat": dict(DEFAULT_CHAT_CONFIG),
         "sections": sections,
     }

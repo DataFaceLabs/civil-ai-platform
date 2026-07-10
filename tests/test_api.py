@@ -245,6 +245,63 @@ def test_project_state_accepts_string_code_semantic_confidence(client: TestClien
     assert patch.json()["site_context"]["IN_ETJ"]["code_semantics"][0]["confidence"] == "bootstrap"
 
 
+def test_project_state_patch_keeps_nested_models(client: TestClient) -> None:
+    from civilai_platform.models.entities import ClientContact, FieldValue, Section
+    from civilai_platform.services import project as project_svc
+    from civilai_platform.store import get_store
+
+    admin = "nested-models-admin"
+    boot = _bootstrap(client, admin, name="Nested Models Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers(admin, tenant_id)
+
+    project_id = client.post(
+        "/v1/projects",
+        json={"name": "Parcel Site", "address": "13903 FM 812, Austin TX"},
+        headers=h,
+    ).json()["project_id"]
+
+    patch_body = {
+        "sections": [
+            {
+                "id": "parcel-section",
+                "title": "Parcel",
+                "step_key": "parcel",
+                "fields": {
+                    "PROPERTY_ADDRESS": {
+                        "value": "13903 FM 812, Austin TX",
+                        "status": "review",
+                    }
+                },
+            }
+        ],
+        "site_context": {
+            "COUNTY": {"value": "Travis", "status": "review"},
+        },
+        "client_contacts": [
+            {
+                "id": "contact-1",
+                "first_name": "Jane",
+                "last_name": "Doe",
+                "email": "jane@example.com",
+                "phone": "512-555-0100",
+            }
+        ],
+    }
+    patch = client.patch(f"/v1/projects/{project_id}/state", json=patch_body, headers=h)
+    assert patch.status_code == 200
+
+    state = get_store().get_project_state(tenant_id, project_id)
+    assert state is not None
+    assert all(isinstance(section, Section) for section in state.sections)
+    assert all(isinstance(value, FieldValue) for value in (state.site_context or {}).values())
+    assert all(isinstance(contact, ClientContact) for contact in state.client_contacts)
+
+    # Exercise the same path the API uses when returning patched state.
+    response = project_svc.get_project_state(get_store(), tenant_id, project_id)
+    assert response.sections[0].fields["PROPERTY_ADDRESS"].value == "13903 FM 812, Austin TX"
+
+
 def test_cross_tenant_access_denied(client: TestClient) -> None:
     a = _bootstrap(client, "user-a", name="Firm A")
     b = _bootstrap(client, "user-b", name="Firm B")
@@ -453,6 +510,50 @@ def test_tenant_llm_invoke_uses_proxy(monkeypatch: pytest.MonkeyPatch, client: T
     )
     assert res.status_code == 200
     assert "Draft" in res.json()["text"]
+
+
+def test_tenant_llm_invoke_chat_mode_forces_text_and_disables_search(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+) -> None:
+    boot = _bootstrap(client, "chat-invoke-user", name="Chat Invoke Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers("chat-invoke-user", tenant_id)
+    store = get_store()
+    store.set_platform_admin("chat-invoke-user", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "chat-invoke-user")
+
+    captured: dict[str, object] = {}
+
+    def _fake_invoke(self, body):  # noqa: ANN001
+        captured.update(body)
+        return {
+            "text": "Plain chat answer.",
+            "model_id": body["model_id"],
+            "latency_ms": 8,
+            "guardrail_warnings": [],
+            "parse_errors": [],
+            "web_search_trace": [],
+        }
+
+    monkeypatch.setattr(
+        "civilai_platform.services.data_proxy.DataProxyClient.invoke_llm",
+        _fake_invoke,
+    )
+    res = client.post(
+        "/v1/tenant/llm/invoke",
+        json={
+            "step_key": "zoning",
+            "user_prompt": "Quick zoning question.",
+            "field_context": {"ZONING_REGS": "LI"},
+            "invoke_mode": "chat",
+        },
+        headers=h,
+    )
+    assert res.status_code == 200
+    assert captured["response_mode"] == "text"
+    assert captured["web_search"]["enabled"] is False
+    assert captured["guardrails"]["required_disclaimers"] == []
 
 
 def test_tenant_llm_invoke_maps_openai_gpt55_preset(

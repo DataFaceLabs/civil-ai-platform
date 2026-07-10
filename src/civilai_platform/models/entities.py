@@ -208,6 +208,15 @@ class ContextDoc(BaseModel):
     s3_key: str | None = None
 
 
+class MapExhibit(BaseModel):
+    id: str
+    slot: str
+    name: str
+    size: int
+    mime_type: str | None = None
+    s3_key: str | None = None
+
+
 class FeasibilityDocumentRef(BaseModel):
     status: str
     saved_at: str
@@ -227,6 +236,7 @@ class ProjectState(BaseModel):
     tenant_id: str
     sections: list[Section] = Field(default_factory=list)
     context_docs: list[ContextDoc] = Field(default_factory=list)
+    map_exhibits: list[MapExhibit] = Field(default_factory=list)
     proposed_use: str | None = None
     parcel: dict[str, Any] | None = None
     site_payload: dict[str, Any] | None = None
