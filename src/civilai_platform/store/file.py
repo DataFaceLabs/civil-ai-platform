@@ -38,6 +38,11 @@ class FileStore(MemoryStore):
         self._tenants = {
             k: Tenant.model_validate(v) for k, v in raw.get("tenants", {}).items()
         }
+        # Rebuild the derived slug index: MemoryStore maintains it only in put_tenant, so
+        # a load-from-disk (every server restart) would otherwise leave get_tenant_by_slug
+        # returning None even though the tenant is present by id. That breaks the public
+        # tenant lookup and any slug-keyed route after a restart.
+        self._slug_index = {t.url_slug: tid for tid, t in self._tenants.items()}
         self._profiles = {
             k: UserProfile.model_validate(v) for k, v in raw.get("profiles", {}).items()
         }
