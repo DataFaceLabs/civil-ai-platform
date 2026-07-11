@@ -54,7 +54,12 @@ resource "aws_amplify_app" "fe" {
 
   access_token = var.github_access_token
 
-  platform = "WEB"
+  # WEB_COMPUTE, not WEB: the FE is a TanStack Start SSR app. `npm run build` runs nitro's
+  # aws_amplify preset (vite.config.ts), which emits `.amplify-hosting/` -- static assets +
+  # a Node compute bundle + deploy-manifest.json. WEB would host the artifact as plain
+  # static files and never start the SSR server; WEB_COMPUTE reads the manifest and runs
+  # compute/default/server.js on nodejs20.x.
+  platform = "WEB_COMPUTE"
 
   build_spec = <<-EOT
     version: 1
@@ -67,7 +72,7 @@ resource "aws_amplify_app" "fe" {
           commands:
             - npm run build
       artifacts:
-        baseDirectory: dist
+        baseDirectory: .amplify-hosting
         files:
           - '**/*'
       cache:
@@ -95,8 +100,10 @@ resource "aws_amplify_branch" "main" {
   branch_name = var.branch_name
 
   enable_auto_build = true
-  framework         = "Web"
-  stage             = var.environment == "prod" ? "PRODUCTION" : "DEVELOPMENT"
+  # Informational label; the SSR behavior itself comes from the app-level
+  # WEB_COMPUTE platform + the build artifact's deploy-manifest.json.
+  framework = "Web Compute"
+  stage     = var.environment == "prod" ? "PRODUCTION" : "DEVELOPMENT"
 }
 
 output "app_id" {
