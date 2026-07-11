@@ -170,7 +170,6 @@ resource "aws_lambda_function" "platform" {
       CIVILAI_DATA_SERVICE_KEY   = var.data_service_key
       CIVILAI_COGNITO_USER_POOL_ID = var.cognito_user_pool_id
       CIVILAI_COGNITO_APP_CLIENT_ID = var.cognito_client_id
-      AWS_REGION                 = var.aws_region
     }
   }
 }
@@ -184,7 +183,10 @@ resource "aws_apigatewayv2_api" "main" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_credentials = true
+    # Auth is a Bearer token in the Authorization header (Cognito JWT authorizer below),
+    # not cookies -- credentialed CORS isn't needed, and AWS rejects allow_credentials=true
+    # combined with a wildcard origin anyway.
+    allow_credentials = false
     allow_headers     = ["authorization", "content-type", "x-request-id"]
     allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     allow_origins     = ["*"]
