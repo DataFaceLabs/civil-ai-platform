@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from civilai_platform.models.entities import AgentRun, AgentRunStatus, new_id, utc_now
+from civilai_platform.services import agent_corpus
 from civilai_platform.services import artifacts as artifact_svc
 from civilai_platform.services import llm_config as llm_config_svc
 from civilai_platform.services.audit import record_audit
@@ -126,6 +127,7 @@ def start_agent_run(
     proposed_use: str | None = None,
     thread_memory: str = "",
     section_body_plain: str = "",
+    actor_role: str | None = None,
 ) -> AgentRun:
     now = utc_now()
     run_id = new_id()
@@ -203,6 +205,21 @@ def start_agent_run(
                 "updated_at": completed,
                 "completed_at": completed,
             }
+        )
+        agent_corpus.capture_draft(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            section_id=active_section_id,
+            entity_id=resolved_entity_id,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            run_id=run_id,
+            field_context=resolved_field_context,
+            request_text=request_text,
+            proposed_use=proposed_use,
+            output_text=response.get("message"),
+            trace_summary=dict(response.get("trace_summary") or {}),
+            model={"preset": tenant_llm.get("modelPreset")},
         )
     except Exception as exc:
         logger.exception("agent run failed")
