@@ -208,8 +208,13 @@ resource "aws_apigatewayv2_api" "main" {
     # Auth is a Bearer token in the Authorization header (Cognito JWT authorizer below),
     # not cookies -- credentialed CORS isn't needed, and AWS rejects allow_credentials=true
     # combined with a wildcard origin anyway.
+    # API Gateway's own CORS layer takes precedence over whatever the Lambda/FastAPI
+    # CORSMiddleware would return -- if a preflight requests a header outside this static
+    # list (e.g. x-tenant-id, which the FE sends on every tenant-scoped call), API Gateway
+    # drops the CORS headers from the response entirely rather than returning a partial
+    # match. Every header the platform client actually sends must be listed here.
     allow_credentials = false
-    allow_headers     = ["authorization", "content-type", "x-request-id"]
+    allow_headers     = ["authorization", "content-type", "x-request-id", "x-tenant-id", "x-dev-user-id"]
     allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     allow_origins     = ["*"]
     max_age           = 300
