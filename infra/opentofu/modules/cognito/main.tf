@@ -20,6 +20,17 @@ variable "mfa_configuration" {
   default = "OFF"
 }
 
+variable "ses_from_email" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    Verified SES identity to send Cognito emails (password reset, invites) from. When
+    empty, Cognito uses its built-in COGNITO_DEFAULT sender (rate-limited, poor
+    deliverability, not for production). When set, the address must be a verified SES
+    identity in this account/region.
+  EOT
+}
+
 resource "aws_cognito_user_pool" "main" {
   name = "civilai-${var.environment}"
 
@@ -29,6 +40,24 @@ resource "aws_cognito_user_pool" "main" {
   deletion_protection = "ACTIVE"
 
   mfa_configuration = var.mfa_configuration
+
+  # Send account email (password reset / invites) via SES when a verified sender is
+  # configured; otherwise fall back to Cognito's built-in sender. SES source_arn is the
+  # verified email identity; same-account so no explicit SES sending-authorization policy
+  # is needed.
+  dynamic "email_configuration" {
+    for_each = var.ses_from_email == "" ? [] : [1]
+    content {
+      email_sending_account = "DEVELOPER"
+      from_email_address    = var.ses_from_email
+      source_arn = format(
+        "arn:aws:ses:%s:%s:identity/%s",
+        var.aws_region,
+        data.aws_caller_identity.current.account_id,
+        var.ses_from_email,
+      )
+    }
+  }
 
   password_policy {
     minimum_length    = 10

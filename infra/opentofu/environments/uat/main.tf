@@ -44,6 +44,7 @@ module "cognito" {
   aws_region      = var.aws_region
   callback_urls   = var.cognito_callback_urls
   logout_urls     = var.cognito_logout_urls
+  ses_from_email  = var.ses_from_email
 }
 
 module "bedrock" {
