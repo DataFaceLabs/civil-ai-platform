@@ -17,6 +17,11 @@ resource "aws_dynamodb_table" "app" {
   hash_key     = "PK"
   range_key    = "SK"
 
+  # User profiles, tenant memberships, and platform-admin flags live here -- guard the
+  # table against accidental `tofu destroy` / forced replacement. PITR (below) covers
+  # data-level restores; this covers losing the whole table.
+  deletion_protection_enabled = true
+
   attribute {
     name = "PK"
     type = "S"

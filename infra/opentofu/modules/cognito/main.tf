@@ -23,6 +23,11 @@ variable "mfa_configuration" {
 resource "aws_cognito_user_pool" "main" {
   name = "civilai-${var.environment}"
 
+  # Real user accounts (incl. platform admins) live in this pool -- an accidental
+  # `tofu destroy` or a change that forces pool replacement would delete every login.
+  # ACTIVE makes AWS reject the delete until this is flipped off deliberately.
+  deletion_protection = "ACTIVE"
+
   mfa_configuration = var.mfa_configuration
 
   password_policy {
