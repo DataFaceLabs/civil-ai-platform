@@ -55,6 +55,17 @@ variable "lambda_package_path" {
   description = "Path to platform Lambda zip; required when create_http_api=true."
 }
 
+variable "dev_auth" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Enables POST /v1/dev/bootstrap (email-only login, no real Cognito auth). The FE has
+    no Cognito Hosted UI flow yet, so this is the only way to sign in until that's built.
+    Anyone with the app URL and an email can sign in as any user -- never enable for an
+    environment that isn't gated behind an obscure/unshared URL.
+  EOT
+}
+
 locals {
   name_prefix = "civilai-${var.environment}"
 }
@@ -161,7 +172,7 @@ resource "aws_lambda_function" "platform" {
   environment {
     variables = {
       CIVILAI_ENVIRONMENT        = var.environment
-      CIVILAI_DEV_AUTH           = "false"
+      CIVILAI_DEV_AUTH           = var.dev_auth ? "true" : "false"
       CIVILAI_STORE_BACKEND      = "dynamodb"
       CIVILAI_DYNAMODB_TABLE     = "civilai-app-${var.environment}"
       CIVILAI_ARTIFACT_BACKEND   = "s3"

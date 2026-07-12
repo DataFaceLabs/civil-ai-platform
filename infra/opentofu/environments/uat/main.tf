@@ -100,6 +100,7 @@ module "api_gateway" {
   data_service_key           = module.secrets.data_service_key
   create_http_api            = true
   lambda_package_path        = var.lambda_package_path
+  dev_auth                   = var.dev_auth
 }
 
 module "observability" {
