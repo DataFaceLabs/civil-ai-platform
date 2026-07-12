@@ -163,6 +163,10 @@ resource "aws_lambda_function" "platform" {
   role          = aws_iam_role.lambda.arn
   handler       = "civilai_platform.lambda_handler.handler"
   runtime       = "python3.12"
+  # scripts/package-lambda.sh builds native deps (pydantic-core, etc.) targeting
+  # aarch64-manylinux2014 -- must match, or compiled extensions fail to import at cold
+  # start ("No module named 'pydantic_core._pydantic_core'") since the default here is x86_64.
+  architectures = ["arm64"]
   timeout       = 29
   memory_size   = 512
 
