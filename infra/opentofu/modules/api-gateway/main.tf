@@ -185,6 +185,13 @@ resource "aws_lambda_function" "platform" {
       CIVILAI_DATA_SERVICE_KEY   = var.data_service_key
       CIVILAI_COGNITO_USER_POOL_ID = var.cognito_user_pool_id
       CIVILAI_COGNITO_APP_CLIENT_ID = var.cognito_client_id
+      # API Gateway's own cors_configuration below already scopes allow_origins to "*" at
+      # the edge; matching it here (rather than the app's localhost-only default) is what
+      # lets FastAPI's CORSMiddleware answer the OPTIONS preflight route (see
+      # aws_apigatewayv2_route.options_proxy) with a 2xx instead of a 400 "disallowed
+      # origin". Real authorization still comes from the Cognito JWT authorizer on every
+      # other route -- this only affects which script-origins may attempt a request.
+      CIVILAI_CORS_ORIGINS = "*"
     }
   }
 }
@@ -245,6 +252,22 @@ resource "aws_apigatewayv2_route" "default" {
   # API Gateway before Lambda ever runs.
   authorization_type = var.dev_auth ? "NONE" : "JWT"
   authorizer_id       = var.dev_auth ? null : aws_apigatewayv2_authorizer.cognito[0].id
+}
+
+# Browsers never send an Authorization header on a CORS preflight OPTIONS request, so
+# routing OPTIONS through $default's JWT authorizer makes every preflight 401 -- and a
+# non-2xx preflight response is rejected by the browser regardless of the CORS headers
+# API Gateway's cors_configuration attaches to it. This explicit, unauthenticated route
+# takes priority over $default for OPTIONS and lets FastAPI's own CORSMiddleware answer
+# the preflight; the actual request on every other method still requires a valid JWT.
+resource "aws_apigatewayv2_route" "options_proxy" {
+  count = var.create_http_api ? 1 : 0
+
+  api_id    = aws_apigatewayv2_api.main[0].id
+  route_key = "OPTIONS /{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda[0].id}"
+
+  authorization_type = "NONE"
 }
 
 resource "aws_apigatewayv2_route" "health" {
