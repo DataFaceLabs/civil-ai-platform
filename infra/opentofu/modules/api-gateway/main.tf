@@ -283,6 +283,21 @@ resource "aws_apigatewayv2_route" "health" {
   target    = "integrations/${aws_apigatewayv2_integration.lambda[0].id}"
 }
 
+# /v1/public/* is unauthenticated by design -- it serves tenant branding (name + logo)
+# for a login page to render BEFORE the user has a token. Behind the $default JWT
+# authorizer it 401s for logged-out visitors, which surfaces as an "Organization not
+# found" error boundary on the FE. The app-layer router under this prefix takes no auth
+# dependency and exposes no sensitive data, so exempt it from the authorizer.
+resource "aws_apigatewayv2_route" "public" {
+  count = var.create_http_api ? 1 : 0
+
+  api_id    = aws_apigatewayv2_api.main[0].id
+  route_key = "GET /v1/public/{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda[0].id}"
+
+  authorization_type = "NONE"
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   count = var.create_http_api ? 1 : 0
 
