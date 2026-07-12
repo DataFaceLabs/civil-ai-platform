@@ -99,6 +99,12 @@ variable "create_platform_http_api" {
   description = "Lambda + HTTP API Gateway (not needed for local FE + local platform)."
 }
 
+variable "dev_auth" {
+  type        = bool
+  default     = false
+  description = "Enable POST /v1/dev/bootstrap email-only login. See api-gateway module for the security caveat -- only for URLs not meant to be publicly discoverable."
+}
+
 variable "create_amplify_app" {
   type    = bool
   default = false
