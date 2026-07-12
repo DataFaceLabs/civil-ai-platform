@@ -31,6 +31,18 @@ variable "app_bucket_arn" {
   type = string
 }
 
+variable "agent_corpus_bucket" {
+  type        = string
+  default     = ""
+  description = "Agent training-corpus bucket name. Empty disables corpus capture (writes are skipped)."
+}
+
+variable "agent_corpus_bucket_arn" {
+  type        = string
+  default     = ""
+  description = "ARN of the agent training-corpus bucket, for the Lambda PutObject grant."
+}
+
 variable "data_api_base_url" {
   type = string
 }
@@ -101,6 +113,18 @@ data "aws_iam_policy_document" "lambda" {
       var.app_bucket_arn,
       "${var.app_bucket_arn}/*",
     ]
+  }
+
+  dynamic "statement" {
+    for_each = var.agent_corpus_bucket_arn == "" ? [] : [1]
+    content {
+      sid    = "S3AgentCorpusWrite"
+      effect = "Allow"
+      # Write-only append of generation traces; the Lambda never reads or deletes the
+      # corpus (that's the Phase 2 dataset-builder's job, out of the request path).
+      actions   = ["s3:PutObject"]
+      resources = ["${var.agent_corpus_bucket_arn}/*"]
+    }
   }
 
   statement {
@@ -181,6 +205,7 @@ resource "aws_lambda_function" "platform" {
       CIVILAI_DYNAMODB_TABLE     = "civilai-app-${var.environment}"
       CIVILAI_ARTIFACT_BACKEND   = "s3"
       CIVILAI_APP_BUCKET         = replace(var.app_bucket_arn, "arn:aws:s3:::", "")
+      CIVILAI_AGENT_CORPUS_BUCKET = var.agent_corpus_bucket
       CIVILAI_DATA_API_BASE      = var.data_api_base_url
       CIVILAI_DATA_SERVICE_KEY   = var.data_service_key
       CIVILAI_COGNITO_USER_POOL_ID = var.cognito_user_pool_id

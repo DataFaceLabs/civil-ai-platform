@@ -65,6 +65,12 @@ module "s3_app" {
   environment = var.environment
 }
 
+module "s3_agent_corpus" {
+  count  = var.create_platform_persistence ? 1 : 0
+  source = "../../modules/s3-agent-corpus"
+  environment = var.environment
+}
+
 module "data_api_ec2" {
   source = "../../modules/data-api-ec2"
 
@@ -96,6 +102,8 @@ module "api_gateway" {
   bedrock_policy_arn         = module.bedrock[0].invoke_policy_arn
   dynamodb_table_arn         = module.dynamodb[0].table_arn
   app_bucket_arn             = data.aws_s3_bucket.data_lake.arn
+  agent_corpus_bucket        = module.s3_agent_corpus[0].bucket_name
+  agent_corpus_bucket_arn    = module.s3_agent_corpus[0].bucket_arn
   data_api_base_url          = module.data_api_ec2.data_api_base_url_http
   data_service_key_parameter = module.secrets.data_service_key_parameter_name
   data_service_key           = module.secrets.data_service_key
