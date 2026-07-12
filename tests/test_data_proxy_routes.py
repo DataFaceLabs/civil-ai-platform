@@ -151,3 +151,66 @@ def test_data_proxy_dependency_never_requests_pii() -> None:
 
     client = get_data_proxy()
     assert client.include_pii is False
+
+
+def test_passthrough_requires_authentication(client: TestClient) -> None:
+    res = client.get("/v1/data-proxy/passthrough/sections/zoning/facts/ent-1")
+    assert res.status_code == 401
+
+
+def test_passthrough_rejects_paths_outside_allowlist(client: TestClient) -> None:
+    tenant_id = _bootstrap(client, "user-a")
+    # An admin/experimental path must not be reachable through the browser proxy.
+    res = client.post(
+        "/v1/data-proxy/passthrough/experimental/llm/invoke",
+        json={"prompt": "x"},
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 403
+
+
+@respx.mock
+def test_passthrough_get_forwards_with_service_key(client: TestClient) -> None:
+    tenant_id = _bootstrap(client, "user-a")
+    route = respx.get("http://data.test/v1/sections/flood/facts/ent-1").mock(
+        return_value=httpx.Response(200, json={"entity_id": "ent-1", "facts": [1]})
+    )
+    res = client.get(
+        "/v1/data-proxy/passthrough/sections/flood/facts/ent-1",
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 200
+    assert res.json()["facts"] == [1]
+    # Service key injected server-side; PII scope never requested.
+    sent = route.calls.last.request
+    assert "X-Data-Scopes" not in sent.headers
+
+
+@respx.mock
+def test_passthrough_post_preserves_409_body(client: TestClient) -> None:
+    """A 409 ambiguous-address response must reach the FE intact, not become a 500."""
+    tenant_id = _bootstrap(client, "user-a")
+    respx.post("http://data.test/v1/fe/site/resolve-address").mock(
+        return_value=httpx.Response(409, json={"message": "ambiguous", "candidates": []})
+    )
+    res = client.post(
+        "/v1/data-proxy/passthrough/fe/site/resolve-address",
+        json={"address": "123 Main St"},
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 409
+    assert res.json()["message"] == "ambiguous"
+
+
+@respx.mock
+def test_passthrough_preserves_404(client: TestClient) -> None:
+    """404 must pass through so the FE can skip an unavailable section."""
+    tenant_id = _bootstrap(client, "user-a")
+    respx.get("http://data.test/v1/sections/soils/facts/ent-1").mock(
+        return_value=httpx.Response(404, json={"detail": "no facts"})
+    )
+    res = client.get(
+        "/v1/data-proxy/passthrough/sections/soils/facts/ent-1",
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 404

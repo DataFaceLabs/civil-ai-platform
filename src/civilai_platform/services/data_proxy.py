@@ -122,6 +122,19 @@ class DataProxyClient:
                 "or disable web search."
             ) from exc
 
+    def passthrough(
+        self, method: str, data_path: str, *, json: dict[str, Any] | None = None
+    ) -> httpx.Response:
+        """Forward a read request to the data API and return the raw response.
+
+        Unlike ``request``, this does NOT raise on non-2xx -- the caller mirrors the
+        upstream status/body verbatim so the FE's status-based logic (409 ambiguous
+        address, 404/503 -> skip section) keeps working through the proxy.
+        """
+        url = f"{self.base_url}/v1/{data_path.lstrip('/')}"
+        with httpx.Client(timeout=self.timeout) as client:
+            return client.request(method, url, headers=self._headers(), json=json)
+
     def get_section_facts(self, entity_id: str, section_id: str) -> dict[str, Any]:
         return self.request("GET", f"/v1/sections/{section_id}/facts/{entity_id}")
 
