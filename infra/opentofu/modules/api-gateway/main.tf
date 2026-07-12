@@ -235,8 +235,12 @@ resource "aws_apigatewayv2_route" "default" {
   route_key = "$default"
   target    = "integrations/${aws_apigatewayv2_integration.lambda[0].id}"
 
-  authorization_type = "JWT"
-  authorizer_id        = aws_apigatewayv2_authorizer.cognito[0].id
+  # $default is a catch-all -- when dev_auth is on there's no Cognito token to authorize
+  # (the FE has no Hosted UI flow yet, see dev_auth var doc), so the gate has to move down
+  # to the app layer (get_auth_context's X-Dev-User-Id fallback) or every request 401s at
+  # API Gateway before Lambda ever runs.
+  authorization_type = var.dev_auth ? "NONE" : "JWT"
+  authorizer_id       = var.dev_auth ? null : aws_apigatewayv2_authorizer.cognito[0].id
 }
 
 resource "aws_apigatewayv2_route" "health" {
