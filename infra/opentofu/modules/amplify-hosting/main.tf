@@ -34,8 +34,9 @@ variable "cognito_client_id" {
   type = string
 }
 
-variable "cognito_domain" {
-  type = string
+variable "cognito_hosted_ui_base" {
+  type        = string
+  description = "Full Hosted UI base URL (https://<domain>.auth.<region>.amazoncognito.com), e.g. cognito module's hosted_ui_base_url output."
 }
 
 variable "mapbox_public_token" {
@@ -85,7 +86,7 @@ resource "aws_amplify_app" "fe" {
     VITE_CIVILAI_PLATFORM_API    = var.platform_api_base
     VITE_CIVILAI_API_BASE        = var.data_api_base
     VITE_CIVILAI_COGNITO_CLIENT_ID = var.cognito_client_id
-    VITE_CIVILAI_COGNITO_DOMAIN  = var.cognito_domain
+    VITE_CIVILAI_COGNITO_HOSTED_UI_BASE = var.cognito_hosted_ui_base
     VITE_MAPBOX_PUBLIC_TOKEN     = var.mapbox_public_token
   }
 
