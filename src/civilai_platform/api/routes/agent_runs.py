@@ -50,6 +50,7 @@ def create_agent_run(
         proposed_use=body.proposed_use,
         thread_memory=body.thread_memory,
         section_body_plain=body.section_body_plain,
+        actor_role=ctx.role.value if ctx.role else None,
     )
     return AgentRunResponse.from_entity(run)
 

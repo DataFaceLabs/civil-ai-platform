@@ -141,6 +141,7 @@ def patch_project_state(
             project_id=project_id,
             actor_user_id=actor_id,
             patch=body,
+            actor_role=ctx.role.value if ctx.role else None,
         )
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc

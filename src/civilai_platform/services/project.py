@@ -13,6 +13,7 @@ from civilai_platform.models.entities import (
     new_id,
     utc_now,
 )
+from civilai_platform.services import agent_corpus
 from civilai_platform.services.audit import record_audit
 from civilai_platform.services.client import sync_client_fields_to_sections
 from civilai_platform.store.base import PlatformStore
@@ -149,6 +150,11 @@ def _merge_project_state(state: ProjectState, patch: ProjectStatePatch) -> Proje
     return ProjectState.model_validate(merged)
 
 
+def _entity_id_from_state(state: ProjectState) -> str | None:
+    parcel = state.parcel if isinstance(state.parcel, dict) else {}
+    return parcel.get("entity_id") or parcel.get("entityId")
+
+
 def patch_project_state(
     store: PlatformStore,
     *,
@@ -156,12 +162,24 @@ def patch_project_state(
     project_id: str,
     actor_user_id: str,
     patch: ProjectStatePatch,
+    actor_role: str | None = None,
 ) -> ProjectStateResponse:
     state = store.get_project_state(tenant_id, project_id)
     if not state:
         raise ValueError("Project state not found")
     updated = _merge_project_state(state, patch)
     store.put_project_state(updated)
+    # Best-effort capture of every section milestone (edit/approve/reopen). Diffs the
+    # pre-save sections against the saved ones; never blocks the save.
+    agent_corpus.capture_section_transitions(
+        tenant_id=tenant_id,
+        project_id=project_id,
+        entity_id=_entity_id_from_state(state),
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+        old_sections=state.sections,
+        new_sections=updated.sections,
+    )
     project = store.get_project(tenant_id, project_id)
     if project:
         store.put_project(project.model_copy(update={"updated_at": utc_now()}))

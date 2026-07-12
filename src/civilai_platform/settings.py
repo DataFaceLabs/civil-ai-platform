@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     app_bucket: str | None = None
     artifact_backend: str = Field(default="memory", description="memory | s3")
 
+    # Agent training-corpus bucket (feedback capture). Empty/None => capture disabled.
+    agent_corpus_bucket: str | None = None
+    # Defensive PII key denylist for the corpus (mirrors the data catalog sensitivity:pii
+    # set; comma-separated override). The field_context already arrives redacted upstream.
+    corpus_pii_keys: str = "owner_name"
+
     # Cognito JWT validation
     cognito_user_pool_id: str | None = None
     cognito_app_client_id: str | None = None
