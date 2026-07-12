@@ -129,11 +129,14 @@ def test_transitions_noop_save_is_skipped(captured: list[dict]) -> None:
 
 
 def test_put_event_noop_when_bucket_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No corpus bucket configured => capture is a silent no-op, never raises."""
-    from civilai_platform.settings import get_settings
+    """No corpus bucket configured => capture is a silent no-op, never raises.
 
-    monkeypatch.setenv("CIVILAI_AGENT_CORPUS_BUCKET", "")
-    get_settings.cache_clear()
+    Monkeypatch the settings lookup locally rather than clearing the global
+    ``get_settings`` cache -- clearing it would rebuild settings from the ambient env and
+    poison unrelated tests (they'd get a real DynamoDB/boto3 backend).
+    """
+    fake_settings = type("S", (), {"agent_corpus_bucket": None})()
+    monkeypatch.setattr(agent_corpus, "get_settings", lambda: fake_settings)
     # Should not raise or attempt any S3 call.
     agent_corpus._put_event(
         {
