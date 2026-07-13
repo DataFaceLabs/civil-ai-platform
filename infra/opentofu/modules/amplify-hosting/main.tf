@@ -71,7 +71,11 @@ resource "aws_amplify_app" "fe" {
             - npm ci
         build:
           commands:
-            - npm run build
+            # Heap headroom for the Vite production build: the FE client bundle is large
+            # enough (mapbox, recharts, tiptap, html-to-docx polyfill graph) that chunk
+            # rendering can exceed Node's default ~2GB old-space cap and OOM (exit 134).
+            # Scoped to the build command so it does not affect the SSR compute runtime.
+            - NODE_OPTIONS=--max-old-space-size=4096 npm run build
       artifacts:
         baseDirectory: .amplify-hosting
         files:
@@ -82,12 +86,12 @@ resource "aws_amplify_app" "fe" {
   EOT
 
   environment_variables = {
-    VITE_CIVILAI_PLATFORM_MODE   = "true"
-    VITE_CIVILAI_PLATFORM_API    = var.platform_api_base
-    VITE_CIVILAI_API_BASE        = var.data_api_base
-    VITE_CIVILAI_COGNITO_CLIENT_ID = var.cognito_client_id
+    VITE_CIVILAI_PLATFORM_MODE          = "true"
+    VITE_CIVILAI_PLATFORM_API           = var.platform_api_base
+    VITE_CIVILAI_API_BASE               = var.data_api_base
+    VITE_CIVILAI_COGNITO_CLIENT_ID      = var.cognito_client_id
     VITE_CIVILAI_COGNITO_HOSTED_UI_BASE = var.cognito_hosted_ui_base
-    VITE_MAPBOX_PUBLIC_TOKEN     = var.mapbox_public_token
+    VITE_MAPBOX_PUBLIC_TOKEN            = var.mapbox_public_token
   }
 
   tags = {
