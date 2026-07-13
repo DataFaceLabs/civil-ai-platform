@@ -602,6 +602,50 @@ def test_tenant_llm_invoke_draft_disables_web_search_even_when_global_enabled(
     assert captured["web_search"]["enabled"] is False
 
 
+def test_tenant_llm_invoke_utilities_enables_web_search_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+) -> None:
+    boot = _bootstrap(client, "utilities-search-user", name="Utilities Search Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers("utilities-search-user", tenant_id)
+    store = get_store()
+    store.set_platform_admin("utilities-search-user", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "utilities-search-user")
+
+    captured: dict[str, object] = {}
+
+    def _fake_invoke(self, body, *, step_key=None, **_kwargs):  # noqa: ANN001
+        captured.update(body)
+        return {
+            "text": "Utility narrative.",
+            "model_id": body["model_id"],
+            "latency_ms": 11,
+            "guardrail_warnings": [],
+            "parse_errors": [],
+            "web_search_trace": [],
+        }
+
+    monkeypatch.setattr(
+        "civilai_platform.services.data_proxy.DataProxyClient.invoke_llm",
+        _fake_invoke,
+    )
+    # No web_search_enabled override: exercises the section baseline default.
+    res = client.post(
+        "/v1/tenant/llm/invoke",
+        json={
+            "step_key": "utilities",
+            "user_prompt": "Review utility boundary fields.",
+            "field_context": {"WATER_SERVICE": "City of Austin"},
+        },
+        headers=h,
+    )
+    assert res.status_code == 200
+    assert captured["web_search"]["enabled"] is True
+    # Baseline uses advanced search depth so Tavily returns richer page content.
+    assert captured["web_search"]["search_depth"] == "advanced"
+
+
 def test_tenant_llm_invoke_chat_mode_forces_text_and_disables_search(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,

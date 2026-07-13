@@ -82,10 +82,20 @@ def _section_config(step_key: str) -> dict[str, Any]:
         cfg.update(
             {
                 "userPromptTemplate": (
-                    "Review utility boundary fields and suggest cautious feasibility language "
-                    "that does not imply capacity or will-serve.\n"
+                    "Review the utility boundary fields and draft cautious feasibility language "
+                    "that does not imply capacity, pressure, or will-serve.\n\n"
+                    "Using only the web search results returned in this run, extract and "
+                    "incorporate any of these that appear: the water and wastewater CCN holder "
+                    "and CCN number, the electric provider, and published OSSF (on-site sewage) "
+                    "requirements for the jurisdiction. Attribute each web-sourced fact to its "
+                    "source URL and cite only sources returned by the search. If a fact is not "
+                    "in the field values or the search results, state that it is unverified "
+                    "rather than inferring it.\n\n"
                     "Water: {{field.WATER_SERVICE}}\n"
-                    "Wastewater: {{field.WASTEWATER_SERVICE}}"
+                    "Wastewater: {{field.WASTEWATER_SERVICE}}\n"
+                    "Electric provider: {{field.ELECTRIC_PROVIDER}}\n"
+                    "Governing jurisdiction: {{field.GOVERNING_JURIS}}\n"
+                    "Property: {{field.PROPERTY_ADDRESS}}"
                 ),
                 "inputFieldCodes": [
                     "WATER_SERVICE",
@@ -100,9 +110,12 @@ def _section_config(step_key: str) -> dict[str, Any]:
                     **BASE_GUARDRAILS,
                     "requiredDisclaimers": ["boundary only", "confirm with provider"],
                 },
+                "webSearchEnabled": True,
                 "searchContextHint": (
-                    "Prefer PUC Texas CCN maps, municipal utility provider pages, and TCEQ OSSF "
-                    "guidance for {{field.GOVERNING_JURIS}}."
+                    "Find the water and wastewater CCN holder and CCN number, the electric "
+                    "utility provider, and OSSF requirements for {{field.PROPERTY_ADDRESS}} in "
+                    "{{field.GOVERNING_JURIS}}. Prefer PUC Texas CCN maps and records, the "
+                    "municipal utility provider's pages, and TCEQ OSSF guidance."
                 ),
             }
         )
@@ -112,8 +125,11 @@ def _section_config(step_key: str) -> dict[str, Any]:
                 "userPromptTemplate": (
                     "Polish the merged feasibility study section content below into a cohesive, "
                     "client-ready report body.\n\n"
+                    "Do not include a Table of Contents — it is assembled automatically from "
+                    "your headings after generation.\n\n"
                     "Use h2 headings for each major section that has source content (for example "
-                    "Parcel, Zoning, Environmental, Utilities, Access, Recommendations). Do not "
+                    "Parcel, Zoning, Environmental, Utilities, Access, Recommendations). Use h3 "
+                    "headings for logical subsections within each major section. Do not "
                     "duplicate section titles in body paragraphs. Preserve factual content from "
                     "the merged sections. Use concise professional engineering prose.\n\n"
                     "Site: {{field.PROPERTY_ADDRESS}}\n"
@@ -158,7 +174,7 @@ def default_llm_lab_config() -> dict[str, Any]:
                 "tcad.org",
             ],
             "blockedDomains": ["reddit.com", "twitter.com", "facebook.com"],
-            "searchDepth": "basic",
+            "searchDepth": "advanced",
             "includeTraceInResponse": True,
         },
         "chat": dict(DEFAULT_CHAT_CONFIG),
