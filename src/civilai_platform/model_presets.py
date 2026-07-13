@@ -8,7 +8,7 @@ MODEL_PRESET_IDS: dict[str, str] = {
     "sonnet": "us.anthropic.claude-sonnet-5",
     "sonnet46": "us.anthropic.claude-sonnet-4-6",
     "nova": "amazon.nova-lite-v1:0",
-    "opus": "us.anthropic.claude-opus-4-6-20260201-v1:0",
+    "opus": "us.anthropic.claude-opus-4-6-v1",
     # OpenAI GPT-5.5
     "gpt55": "gpt-5.5",
     "gpt55pro": "gpt-5.5-pro",
