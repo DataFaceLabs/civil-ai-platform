@@ -57,11 +57,16 @@ def _resolve_web_search_enabled(
     return bool(web_search_cfg.get("enabled", False))
 
 
+_STRUCTURED_WEB_SEARCH_TOKEN_FLOOR = 4096
+
+
 def _resolve_guardrails(
     *,
     section: dict[str, Any],
     invoke_mode: str,
     step_key: str = "",
+    response_mode: str = "structured",
+    web_search_enabled: bool = False,
 ) -> dict[str, Any]:
     """Chat Q&A uses base guardrails; section drafts keep per-section disclaimers."""
     if invoke_mode == "chat":
@@ -69,7 +74,17 @@ def _resolve_guardrails(
     guardrails = _snake_guardrails(dict(section.get("guardrails") or {}))
     # Full-document assembly needs a much larger prose budget than single-section drafts.
     if step_key == "draft":
-        guardrails["max_output_tokens"] = max(int(guardrails["max_output_tokens"]), 4096)
+        guardrails["max_output_tokens"] = max(
+            int(guardrails["max_output_tokens"]), _STRUCTURED_WEB_SEARCH_TOKEN_FLOOR
+        )
+    # Structured JSON drafts that run web search must also fit content_markdown plus a
+    # sources array in one response; a low per-section cap truncates the JSON mid-value
+    # and fails schema parsing in the data API. Guarantee headroom regardless of the
+    # per-section setting.
+    elif response_mode == "structured" and web_search_enabled:
+        guardrails["max_output_tokens"] = max(
+            int(guardrails["max_output_tokens"]), _STRUCTURED_WEB_SEARCH_TOKEN_FLOOR
+        )
     return guardrails
 
 
@@ -158,20 +173,23 @@ def invoke_tenant_section_llm(
             step_key=step_key,
         )
         resolved_search_hint = search_context_hint or str(section.get("searchContextHint") or "")
+    response_mode = _resolve_response_mode(
+        tenant_cfg=tenant_cfg,
+        invoke_mode=invoke_mode,
+        step_key=step_key,
+    )
     body = {
         "model_id": model_id,
         "system_prompt": system_prompt,
         "user_prompt": user_prompt,
         "field_context": field_context,
-        "response_mode": _resolve_response_mode(
-            tenant_cfg=tenant_cfg,
-            invoke_mode=invoke_mode,
-            step_key=step_key,
-        ),
+        "response_mode": response_mode,
         "guardrails": _resolve_guardrails(
             section=section,
             invoke_mode=invoke_mode,
             step_key=step_key,
+            response_mode=response_mode,
+            web_search_enabled=web_enabled,
         ),
         "web_search": _snake_web_search(
             web_search_cfg,

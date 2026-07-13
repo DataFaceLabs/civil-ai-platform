@@ -9,7 +9,7 @@ def test_resolve_model_id_openai_gpt55() -> None:
 def test_resolve_model_id_bedrock() -> None:
     assert resolve_model_id("haiku") == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
     assert resolve_model_id("sonnet46") == "us.anthropic.claude-sonnet-4-6"
-    assert resolve_model_id("opus") == "us.anthropic.claude-opus-4-6-20260201-v1:0"
+    assert resolve_model_id("opus") == "us.anthropic.claude-opus-4-6-v1"
 
 
 def test_resolve_model_id_unknown_falls_back_to_haiku() -> None:

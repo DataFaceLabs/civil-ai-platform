@@ -73,6 +73,44 @@ def test_resolve_guardrails_draft_raises_output_token_floor() -> None:
     assert guardrails["max_output_tokens"] == 4096
 
 
+def test_resolve_guardrails_structured_web_search_raises_output_token_floor() -> None:
+    # Structured JSON + web search emits a sources array; a 1024 cap truncates the JSON.
+    section = {"guardrails": {"maxOutputTokens": 1024}}
+    guardrails = llm_invoke_svc._resolve_guardrails(
+        section=section,
+        invoke_mode="section",
+        step_key="utilities",
+        response_mode="structured",
+        web_search_enabled=True,
+    )
+    assert guardrails["max_output_tokens"] == 4096
+
+
+def test_resolve_guardrails_structured_without_web_search_keeps_section_cap() -> None:
+    # No web search means no sources array, so the per-section budget is left untouched.
+    section = {"guardrails": {"maxOutputTokens": 1024}}
+    guardrails = llm_invoke_svc._resolve_guardrails(
+        section=section,
+        invoke_mode="section",
+        step_key="utilities",
+        response_mode="structured",
+        web_search_enabled=False,
+    )
+    assert guardrails["max_output_tokens"] == 1024
+
+
+def test_resolve_guardrails_web_search_respects_higher_section_cap() -> None:
+    section = {"guardrails": {"maxOutputTokens": 8192}}
+    guardrails = llm_invoke_svc._resolve_guardrails(
+        section=section,
+        invoke_mode="section",
+        step_key="utilities",
+        response_mode="structured",
+        web_search_enabled=True,
+    )
+    assert guardrails["max_output_tokens"] == 8192
+
+
 def test_resolve_response_mode_draft_uses_text() -> None:
     assert (
         llm_invoke_svc._resolve_response_mode(

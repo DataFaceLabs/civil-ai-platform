@@ -778,7 +778,7 @@ def test_tenant_llm_invoke_uses_section_model_override(
         headers=h,
     )
     assert res.status_code == 200
-    assert captured["model_id"] == "us.anthropic.claude-opus-4-6-20260201-v1:0"
+    assert captured["model_id"] == "us.anthropic.claude-opus-4-6-v1"
 
 
 def test_tenant_llm_config_isolated(client: TestClient) -> None:

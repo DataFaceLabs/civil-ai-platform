@@ -40,7 +40,11 @@ DEFAULT_CHAT_CONFIG: dict[str, Any] = {
 }
 
 BASE_GUARDRAILS: dict[str, Any] = {
-    "maxOutputTokens": 1024,
+    # Structured (JSON) drafts must fit content_markdown + caveats + data_gaps + a
+    # sources array in one response; 1024 (floored to 2048 server-side) truncates the
+    # JSON on web-search sections and fails parsing. 4096 leaves headroom under the
+    # Bedrock structured cap (8192).
+    "maxOutputTokens": 4096,
     "temperature": 0.2,
     "forbiddenPhrases": [
         "will-serve",
