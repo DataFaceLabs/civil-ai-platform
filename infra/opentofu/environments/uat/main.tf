@@ -139,10 +139,9 @@ module "amplify" {
   repository_url       = var.fe_github_repository_url
   github_access_token  = var.github_access_token
   branch_name          = var.fe_branch_name
-  platform_api_base    = var.create_platform_http_api ? module.api_gateway[0].api_endpoint : "http://localhost:8001"
-  data_api_base        = module.data_api_ec2.data_api_base_url_http
+  platform_api_base      = var.create_platform_http_api ? module.api_gateway[0].api_endpoint : "http://localhost:8001"
   cognito_user_pool_id   = var.create_platform_persistence ? module.cognito[0].user_pool_id : ""
   cognito_client_id      = var.create_platform_persistence ? module.cognito[0].app_client_id : ""
   cognito_hosted_ui_base = var.create_platform_persistence ? module.cognito[0].hosted_ui_base_url : ""
-  mapbox_public_token  = var.mapbox_access_token
+  mapbox_public_token    = var.mapbox_access_token
 }

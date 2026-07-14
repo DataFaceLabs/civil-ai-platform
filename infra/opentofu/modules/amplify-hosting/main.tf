@@ -22,10 +22,6 @@ variable "platform_api_base" {
   type = string
 }
 
-variable "data_api_base" {
-  type = string
-}
-
 variable "cognito_user_pool_id" {
   type = string
 }
@@ -85,10 +81,13 @@ resource "aws_amplify_app" "fe" {
           - node_modules/**/*
   EOT
 
+  # Do NOT set VITE_CIVILAI_API_BASE here. UAT/prod FE builds use PLATFORM_MODE + the
+  # HTTPS platform data-proxy; baking the EC2 HTTP data API (`http://{eip}:8000`) into
+  # Amplify caused Chrome mixed-content ("Not secure" with a valid certificate).
+  # Lambda still uses CIVILAI_DATA_API_BASE (server-side) for lake reads.
   environment_variables = {
     VITE_CIVILAI_PLATFORM_MODE          = "true"
     VITE_CIVILAI_PLATFORM_API           = var.platform_api_base
-    VITE_CIVILAI_API_BASE               = var.data_api_base
     VITE_CIVILAI_COGNITO_CLIENT_ID      = var.cognito_client_id
     VITE_CIVILAI_COGNITO_HOSTED_UI_BASE = var.cognito_hosted_ui_base
     VITE_MAPBOX_PUBLIC_TOKEN            = var.mapbox_public_token
