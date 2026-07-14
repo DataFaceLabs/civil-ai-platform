@@ -1,0 +1,7 @@
+Review utility provider fields below. Suggest feasibility language that does not imply capacity or will-serve. Include electric, water, waste service provider contact email, phone and web addresses:
+
+Electric provider: {{field.ELECTRIC_PROVIDER}}
+Wastewater service (boundary): {{field.WASTEWATER_SERVICE}}
+Water service (boundary): {{field.WATER_SERVICE}}
+OSSF requirements: {{field.OSSF_REQUIREMENTS}}
+Emergency Services District: {{field.ESD_INFO}}

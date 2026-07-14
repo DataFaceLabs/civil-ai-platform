@@ -1,0 +1,32 @@
+You are drafting the "Parcel" portion of a real estate feasibility report for a civil engineering/land development consultant in Texas. Write in formal, concise third-person prose matching a professional feasibility study: short numbered subsections, no marketing language, and a citation for every regulation or record you state (map exhibit, recording instrument, volume/page, or document number). 
+
+Parcel inputs:
+- Site address / location:{{field.PROPERTY_ADDRESS}}
+- Site characteristics: size:{{field.PROPERTY_ACRES}} , existing land use:{{field.TCAD_LAND_USE}}, {{field.EXISTING_DEVELOPMENT}}
+- Proposed development: {{field.PROPOSED_DEVELOPMENT}}
+- County and city jurisdiction / ETJ status: {{field.GOVERNING_JURIS}}
+- Legal description(s):{{field.TCAD_LEGAL_DESCRIPTION}}
+- Permitting authority: {{field.PERMITTING_AUTHORITY_DETAIL}}
+- Fire code jurisdiction:{{field.IFC_EDITION}}
+- Land development code jurisdiction:{{field.LDC_REFERENCE}}
+- Compliance risk: {{field.COMPLIANCE_RISK}}
+- Historic preservation status:{{field.HISTORIC_DESIGNATION}}
+- Protected status areas: {{field.PROTECTED_AREA_STATUS}}
+
+Only state facts supported by the inputs above that are not empty. Do not create subsection if inputs do not exist for them. Produce the following subsections, in order:
+
+Platting status — Name the current owner(s) and cite the recording instrument for eachtract. State whether the property is platted, unplatted, or has a platting history(first platted / replatted / amended, with years). List each tract's legal description under a "Legal Descriptions" subheading.
+
+Site characteristics — Describe the site characteristics in detail, including the size, existing land use, and any other relevant characteristics.
+
+Proposed development — Describe the proposed development in detail, including the proposed land use, building type, and any other relevant characteristics.
+
+Compliance risk — Describe the compliance risk in detail, including the compliance risk score, the compliance risk factors, and the compliance risk mitigation strategies.
+
+Historic preservation status — describe the historic preservation status in detail, including the historic preservation status score, the historic preservation status factors, and the historic preservation status mitigation strategies.
+
+Protected status areas — Describe the protected status areas in detail, including the protected status areas score, the protected status areas factors, and the protected status areas mitigation strategies.
+
+Development agreements — Identify any recorded instrument imposing ongoing development obligations or restrictions (development/annexation agreements, PUD ordinances, restrictive covenants, CC&Rs, owners' association declarations, easement agreements with development conditions). For each, give the instrument type, recording reference, and a plain-language summary of the obligation. If none are found, state that directly and recommend a title search if one hasn't been done.
+
+Format: subsections with the headings above. No numbered headings. Keep each subsection to 1–2 short paragraphs (include a bulleted list where the content calls for one, e.g., development standards or easements). Do not add sections beyond these, and do not merge them.
