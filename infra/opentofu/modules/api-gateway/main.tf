@@ -363,5 +363,5 @@ output "lambda_function_name" {
 }
 
 output "api_endpoint" {
-  value = var.create_http_api ? aws_apigatewayv2_api.main[0].api_endpoint : "https://api-${var.environment}.civil.ai"
+  value = var.create_http_api ? aws_apigatewayv2_api.main[0].api_endpoint : "https://api-${var.environment}.civil1.ai"
 }

@@ -867,7 +867,7 @@ def test_platform_admin_bootstrap_allows_tenant_slug_login(client: TestClient) -
     store.put_user_profile(
         UserProfile(
             user_id="platform-only-admin",
-            email="platform@civil.ai",
+            email="platform@civil1.ai",
             first_name="Platform",
             last_name="Admin",
             created_at=utc_now(),
@@ -877,7 +877,7 @@ def test_platform_admin_bootstrap_allows_tenant_slug_login(client: TestClient) -
     platform_tenant_svc.ensure_platform_admin_membership(store, "platform-only-admin")
     res = client.post(
         "/v1/dev/bootstrap",
-        json={"email": "platform@civil.ai", "tenant_slug": acme_slug},
+        json={"email": "platform@civil1.ai", "tenant_slug": acme_slug},
         headers=_headers("dev-platform-civil-ai"),
     )
     assert res.status_code == 200
@@ -904,7 +904,7 @@ def test_platform_admin_acting_actor_on_project_create(client: TestClient) -> No
     store.put_user_profile(
         UserProfile(
             user_id="platform-only-admin",
-            email="platform@civil.ai",
+            email="platform@civil1.ai",
             first_name="Platform",
             last_name="Admin",
             created_at=utc_now(),
@@ -932,7 +932,7 @@ def test_platform_admin_purge_non_platform_memberships(client: TestClient) -> No
     store.put_user_profile(
         UserProfile(
             user_id="cross-tenant-admin",
-            email="cross@civil.ai",
+            email="cross@civil1.ai",
             first_name="Cross",
             last_name="Admin",
             created_at=now,
@@ -972,7 +972,7 @@ def test_platform_admin_bootstrap_routes_to_platform_tenant(client: TestClient) 
     store.put_user_profile(
         UserProfile(
             user_id="platform-only-admin",
-            email="platform@civil.ai",
+            email="platform@civil1.ai",
             first_name="Platform",
             last_name="Admin",
             created_at=utc_now(),
@@ -984,7 +984,7 @@ def test_platform_admin_bootstrap_routes_to_platform_tenant(client: TestClient) 
         "/v1/dev/bootstrap",
         json={
             "name": "Platform Admin",
-            "email": "platform@civil.ai",
+            "email": "platform@civil1.ai",
         },
         headers=_headers("dev-platform-civil-ai"),
     )
@@ -1160,7 +1160,7 @@ def test_tenant_purge_requires_email_authorization(client: TestClient) -> None:
         store.put_user_profile(
             UserProfile(
                 user_id="purge-admin",
-                email="admin@civil.ai",
+                email="admin@civil1.ai",
                 first_name="Admin",
                 last_name="User",
                 created_at=utc_now(),
@@ -1183,7 +1183,7 @@ def test_tenant_purge_requires_email_authorization(client: TestClient) -> None:
 
     ok = client.post(
         f"/v1/admin/tenants/{tenant_id}/purge",
-        json={"confirmation_email": "admin@civil.ai", "authorization_code": code},
+        json={"confirmation_email": "admin@civil1.ai", "authorization_code": code},
         headers=admin_h,
     )
     assert ok.status_code == 204
@@ -1200,7 +1200,7 @@ def test_platform_admin_user_crud(client: TestClient) -> None:
     created = client.post(
         "/v1/admin/platform-admins",
         json={
-            "email": "ops@civil.ai",
+            "email": "ops@civil1.ai",
             "first_name": "Ops",
             "last_name": "User",
             "invite": True,
@@ -1239,7 +1239,7 @@ def test_platform_admin_invalidate_invited_user(client: TestClient) -> None:
     created = client.post(
         "/v1/admin/platform-admins",
         json={
-            "email": "pending@civil.ai",
+            "email": "pending@civil1.ai",
             "first_name": "Pending",
             "last_name": "Admin",
             "invite": True,
@@ -1274,7 +1274,7 @@ def test_platform_admin_list_all_users(client: TestClient) -> None:
     store.put_user_profile(
         UserProfile(
             user_id="sys-admin",
-            email="sys@civil.ai",
+            email="sys@civil1.ai",
             first_name="Sys",
             last_name="Admin",
             created_at=now,

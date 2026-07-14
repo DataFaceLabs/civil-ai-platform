@@ -85,12 +85,18 @@ resource "aws_amplify_app" "fe" {
   # HTTPS platform data-proxy; baking the EC2 HTTP data API (`http://{eip}:8000`) into
   # Amplify caused Chrome mixed-content ("Not secure" with a valid certificate).
   # Lambda still uses CIVILAI_DATA_API_BASE (server-side) for lake reads.
+  #
+  # Section Generate Draft defaults to LLM Lab (tenant section templates via
+  # /v1/tenant/llm/invoke). Do not enable agent section drafts or the local agent
+  # bypass on deployed Amplify builds unless intentionally switching UAT to Strands.
   environment_variables = {
     VITE_CIVILAI_PLATFORM_MODE          = "true"
     VITE_CIVILAI_PLATFORM_API           = var.platform_api_base
     VITE_CIVILAI_COGNITO_CLIENT_ID      = var.cognito_client_id
     VITE_CIVILAI_COGNITO_HOSTED_UI_BASE = var.cognito_hosted_ui_base
     VITE_MAPBOX_PUBLIC_TOKEN            = var.mapbox_public_token
+    VITE_CIVILAI_AGENT_DEV_MODE         = "false"
+    VITE_CIVILAI_AGENT_SECTION_DRAFTS   = "false"
   }
 
   tags = {

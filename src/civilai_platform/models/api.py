@@ -394,4 +394,9 @@ class ArtifactPresignResponse(BaseModel):
     expires_in: int
 
 
+class ArtifactDownloadUrlResponse(BaseModel):
+    download_url: str
+    expires_in: int
+
+
 MeResponse.model_rebuild()

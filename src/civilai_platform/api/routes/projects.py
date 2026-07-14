@@ -7,6 +7,7 @@ from civilai_platform.auth.actor import tenant_actor_user_id
 from civilai_platform.auth.authz import require_membership
 from civilai_platform.auth.context import AuthContext
 from civilai_platform.models.api import (
+    ArtifactDownloadUrlResponse,
     ArtifactPresignRequest,
     ArtifactPresignResponse,
     ProjectCreate,
@@ -191,6 +192,10 @@ def download_artifact(
     assert ctx.tenant_id
     if not store.get_project(ctx.tenant_id, project_id):
         raise HTTPException(404, "Project not found")
+    try:
+        artifact_svc.assert_project_artifact_key(ctx.tenant_id, project_id, key)
+    except ValueError as exc:
+        raise HTTPException(403, str(exc)) from exc
     data = artifact_svc.download_artifact_bytes(key)
     if not data:
         raise HTTPException(404, "Artifact not found")
@@ -199,3 +204,28 @@ def download_artifact(
         media_type=artifact_svc.artifact_media_type(key),
         headers={"Content-Disposition": f'inline; filename="{key.rsplit("/", 1)[-1]}"'},
     )
+
+
+@router.get("/{project_id}/artifacts/download-url", response_model=ArtifactDownloadUrlResponse)
+def artifact_download_url(
+    project_id: str,
+    key: Annotated[str, Query()],
+    ctx: Annotated[AuthContext, Depends(_member_ctx)],
+    store: Annotated[PlatformStore, Depends(get_store_dep)],
+) -> ArtifactDownloadUrlResponse:
+    """Time-limited GET URL for opening DOCX (etc.) in Microsoft Office Online."""
+    assert ctx.tenant_id
+    if not store.get_project(ctx.tenant_id, project_id):
+        raise HTTPException(404, "Project not found")
+    try:
+        artifact_svc.assert_project_artifact_key(ctx.tenant_id, project_id, key)
+    except ValueError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    # Memory backend has no HEAD; only verify existence there before issuing a token.
+    from civilai_platform.settings import get_settings
+
+    if get_settings().artifact_backend == "memory" and not artifact_svc.download_artifact_bytes(
+        key
+    ):
+        raise HTTPException(404, "Artifact not found")
+    return artifact_svc.presign_download(key=key)

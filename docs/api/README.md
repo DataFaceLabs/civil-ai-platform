@@ -26,7 +26,7 @@ Tenants are addressed in the FE at `/fstudio/{url_slug}/…`. Public branding (n
 | POST | `/v1/admin/tenants` | Create tenant + invite initial admin |
 | POST | `/v1/admin/tenants/{id}/invite-admin` | Invite tenant admin |
 | GET/PATCH | `/v1/admin/llm-baseline` | App LLM baseline template |
-| GET/POST/DELETE | `/v1/admin/platform-admins/{user_id}` | Grant/revoke civil.ai admin |
+| GET/POST/DELETE | `/v1/admin/platform-admins/{user_id}` | Grant/revoke civil1.ai admin |
 
 ## Tenant admin APIs
 
