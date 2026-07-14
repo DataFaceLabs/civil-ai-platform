@@ -1265,6 +1265,12 @@ def test_platform_admin_invalidate_invited_user(client: TestClient) -> None:
     assert membership.status.value == "disabled"
     assert store.get_user_profile(user_id) is not None
 
+    # Disabled former admins must still be deletable (Admin UI cleanup).
+    deleted = client.delete(f"/v1/admin/platform-admins/{user_id}", headers=h)
+    assert deleted.status_code == 204
+    assert store.get_membership(platform.tenant_id, user_id) is None
+    assert store.get_user_profile(user_id) is None
+
 
 def test_platform_admin_list_all_users(client: TestClient) -> None:
     store = get_store()

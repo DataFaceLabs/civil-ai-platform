@@ -381,11 +381,23 @@ def delete_platform_admin(
     user_id: str,
     actor_user_id: str,
 ) -> None:
-    if not store.is_platform_admin(user_id):
+    """Remove a platform admin, including disabled former admins after invite invalidate.
+
+    Invalidate clears the platform-admin flag but leaves a DISABLED platform membership.
+    Delete must still clean that up so Admin UI can remove orphaned rows.
+    """
+    platform = platform_tenant_svc.get_platform_tenant(store)
+    membership = (
+        store.get_membership(platform.tenant_id, user_id) if platform else None
+    )
+    is_admin = store.is_platform_admin(user_id)
+    is_disabled_former = bool(
+        membership and membership.status == MembershipStatus.DISABLED
+    )
+    if not is_admin and not is_disabled_former:
         return
     store.set_platform_admin(user_id, False)
     profile = store.get_user_profile(user_id)
-    platform = platform_tenant_svc.get_platform_tenant(store)
     if platform:
         store.delete_membership(platform.tenant_id, user_id)
     remaining = store.list_memberships_for_user(user_id)
