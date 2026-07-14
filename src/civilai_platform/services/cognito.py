@@ -50,12 +50,27 @@ class CognitoProvisioner:
     def disable_user(self, *, email: str) -> None:
         if not self._client or not self._pool_id:
             return
-        self._client.admin_disable_user(UserPoolId=self._pool_id, Username=email)
+        try:
+            self._client.admin_disable_user(UserPoolId=self._pool_id, Username=email)
+        except self._client.exceptions.UserNotFoundException:
+            return
+        except Exception as exc:  # noqa: BLE001 — Cognito client errors vary by botocore version
+            # Race: user may not be queryable immediately after admin_create_user.
+            if "UserNotFoundException" in type(exc).__name__ or "UserNotFoundException" in str(exc):
+                return
+            raise
 
     def delete_user(self, *, email: str) -> None:
         if not self._client or not self._pool_id:
             return
-        self._client.admin_delete_user(UserPoolId=self._pool_id, Username=email)
+        try:
+            self._client.admin_delete_user(UserPoolId=self._pool_id, Username=email)
+        except self._client.exceptions.UserNotFoundException:
+            return
+        except Exception as exc:  # noqa: BLE001
+            if "UserNotFoundException" in type(exc).__name__ or "UserNotFoundException" in str(exc):
+                return
+            raise
 
 
 _provisioner: CognitoProvisioner | None = None
