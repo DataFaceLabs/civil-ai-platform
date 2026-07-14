@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from civilai_platform.api.deps import get_store_dep
 from civilai_platform.models.api import PublicTenantResponse
@@ -24,4 +24,21 @@ def get_public_tenant(
         name=tenant.name,
         url_slug=tenant.url_slug,
         logo_url=artifact_svc.tenant_logo_url(tenant.logo_s3_key),
+    )
+
+
+@router.get("/artifacts/{token}")
+def get_public_artifact(token: str) -> Response:
+    """Unauthenticated short-lived download used by Microsoft Office Online viewer."""
+    key = artifact_svc.resolve_preview_token(token)
+    if not key:
+        raise HTTPException(404, "Preview link expired or not found")
+    data = artifact_svc.download_artifact_bytes(key)
+    if not data:
+        raise HTTPException(404, "Artifact not found")
+    filename = key.rsplit("/", 1)[-1]
+    return Response(
+        content=data,
+        media_type=artifact_svc.artifact_media_type(key),
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
