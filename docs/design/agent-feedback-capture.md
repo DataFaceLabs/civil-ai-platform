@@ -51,16 +51,20 @@ blocks or fails the request** — all errors are swallowed and logged.
   "event_type": "draft|edit|approve|reopen",
   "captured_at": "<ISO-8601 UTC>",
   "tenant_id": "...", "project_id": "...", "section_id": "...",
-  "entity_id": "<parcel uuid|null>",
+  "entity_id": "<parcel uuid|null>",   // on EVERY milestone (draft + edit/approve/reopen)
   "actor_user_id": "<cognito sub>",
+  "actor_role": "<tenant role at event time|null>",
 
-  // draft only:
+  // draft only — this IS the section's initiate state for the run:
   "run_id": "...",
   "model": { "preset": "...", "model_id": "..." },
   "input_context": {
-    "field_context": { "...": "..." },   // the data pulled — PII-redacted (owner_name -> [redacted])
+    "field_context": { "...": "..." },   // full data pull — PII-redacted (owner_name -> [redacted])
+                                         // includes PROPERTY_ADDRESS, TCAD_INFO, etc.
     "proposed_use": "...",
-    "request": "..."
+    "request": "...",                    // sectionwise prompt
+    "chat_system_prompt": "...",         // tenant Lab system prompt that steered the agent
+    "chat_instructions": ["..."]         // tenant Lab instruction list
   },
   "agent_output": { "text": "...", "trace_summary": { } },
 
@@ -70,6 +74,21 @@ blocks or fails the request** — all errors are swallowed and logged.
 }
 ```
 
+### Where "initiate state" lives
+
+There is **no separate `initiate` event**. For every section draft (parcel, zoning,
+utilities, …), initiate state is the draft's `input_context`:
+
+| You asked for | Captured as |
+|---|---|
+| Address | `input_context.field_context.PROPERTY_ADDRESS` |
+| Parcel ID | `entity_id` + `field_context.TCAD_INFO` / geometry ids |
+| Full data-pull blob | `input_context.field_context` (all governed codes) |
+| Sectionwise prompt | `input_context.request` |
+| Lab system prompt / instructions | `input_context.chat_system_prompt` / `chat_instructions` |
+
+Edits and approvals then append under the same `section/{section_id}/` prefix, each
+carrying the same `entity_id` so the whole trajectory stays keyed to the parcel.
 ## PII
 
 Only `owner_name` is `sensitivity: pii` in the data catalog (the site address and parcel

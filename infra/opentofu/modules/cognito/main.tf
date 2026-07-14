@@ -89,6 +89,13 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_scopes                 = ["email", "openid", "profile"]
   supported_identity_providers         = ["COGNITO"]
+
+  # Enables AdminInitiateAuth(ADMIN_USER_PASSWORD_AUTH) for UAT smoke scripts only.
+  # Does not change the Hosted UI login path used by the FE.
+  explicit_auth_flows = [
+    "ALLOW_ADMIN_USER_PASSWORD_AUTH",
+    "ALLOW_REFRESH_TOKEN_AUTH",
+  ]
 }
 
 resource "aws_cognito_user_pool_domain" "main" {

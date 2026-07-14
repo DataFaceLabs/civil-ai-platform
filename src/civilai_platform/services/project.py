@@ -151,8 +151,22 @@ def _merge_project_state(state: ProjectState, patch: ProjectStatePatch) -> Proje
 
 
 def _entity_id_from_state(state: ProjectState) -> str | None:
+    """Resolve the parcel entity id for corpus events on *any* section change.
+
+    Prefer ``site_payload.entity_id`` (how FE/agent-runs store it), then the legacy
+    ``parcel.entity_id`` / ``entityId`` fields.
+    """
+    site = state.site_payload if isinstance(state.site_payload, dict) else {}
+    for key in ("entity_id", "entityId"):
+        raw = site.get(key)
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
     parcel = state.parcel if isinstance(state.parcel, dict) else {}
-    return parcel.get("entity_id") or parcel.get("entityId")
+    for key in ("entity_id", "entityId"):
+        raw = parcel.get(key)
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+    return None
 
 
 def patch_project_state(
@@ -170,11 +184,12 @@ def patch_project_state(
     updated = _merge_project_state(state, patch)
     store.put_project_state(updated)
     # Best-effort capture of every section milestone (edit/approve/reopen). Diffs the
-    # pre-save sections against the saved ones; never blocks the save.
+    # pre-save sections against the saved ones; never blocks the save. entity_id is
+    # taken from the *updated* state so a same-request site_payload seed sticks.
     agent_corpus.capture_section_transitions(
         tenant_id=tenant_id,
         project_id=project_id,
-        entity_id=_entity_id_from_state(state),
+        entity_id=_entity_id_from_state(updated) or _entity_id_from_state(state),
         actor_user_id=actor_user_id,
         actor_role=actor_role,
         old_sections=state.sections,

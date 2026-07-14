@@ -50,6 +50,8 @@ def test_draft_record_shape(captured: list[dict]) -> None:
         output_text="The site is zoned SF-3...",
         trace_summary={"tokens": 42},
         model={"preset": "haiku"},
+        chat_system_prompt="You are a civil engineer.",
+        chat_instructions=["Cite sources", "Be concise"],
     )
     assert len(captured) == 1
     rec = captured[0]
@@ -60,6 +62,8 @@ def test_draft_record_shape(captured: list[dict]) -> None:
     assert rec["actor_role"] == "Admin"
     assert rec["input_context"]["field_context"]["owner_name"] == "[redacted]"
     assert rec["input_context"]["field_context"]["ZONING_REGS"] == "SF-3"
+    assert rec["input_context"]["chat_system_prompt"] == "You are a civil engineer."
+    assert rec["input_context"]["chat_instructions"] == ["Cite sources", "Be concise"]
     assert rec["agent_output"]["text"] == "The site is zoned SF-3..."
 
 
@@ -85,7 +89,7 @@ def test_transitions_edit_approve(captured: list[dict]) -> None:
     agent_corpus.capture_section_transitions(
         tenant_id="t1",
         project_id="p1",
-        entity_id=None,
+        entity_id="entity-abc",
         actor_user_id="u1",
         actor_role="Analyst",
         old_sections=old,
@@ -95,8 +99,9 @@ def test_transitions_edit_approve(captured: list[dict]) -> None:
     assert by_section["zoning"]["event_type"] == "edit"  # body changed
     assert by_section["zoning"]["text"] == "new body"
     assert by_section["zoning"]["actor_role"] == "Analyst"
+    assert by_section["zoning"]["entity_id"] == "entity-abc"
     assert by_section["flood"]["event_type"] == "approve"  # status -> approved
-
+    assert by_section["flood"]["entity_id"] == "entity-abc"
 
 def test_transitions_reopen(captured: list[dict]) -> None:
     old = [_section("zoning", "body", "approved")]
