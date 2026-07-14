@@ -52,6 +52,11 @@ def test_draft_record_shape(captured: list[dict]) -> None:
         model={"preset": "haiku"},
         chat_system_prompt="You are a civil engineer.",
         chat_instructions=["Cite sources", "Be concise"],
+        prompt_config={
+            "config_version": 3,
+            "prompt_template": "Draft zoning: {{field.ZONING_REGS}}",
+            "rendered_prompt": "Draft zoning: SF-3",
+        },
     )
     assert len(captured) == 1
     rec = captured[0]
@@ -64,6 +69,8 @@ def test_draft_record_shape(captured: list[dict]) -> None:
     assert rec["input_context"]["field_context"]["ZONING_REGS"] == "SF-3"
     assert rec["input_context"]["chat_system_prompt"] == "You are a civil engineer."
     assert rec["input_context"]["chat_instructions"] == ["Cite sources", "Be concise"]
+    assert rec["input_context"]["prompt_config"]["config_version"] == 3
+    assert rec["input_context"]["prompt_config"]["rendered_prompt"] == "Draft zoning: SF-3"
     assert rec["agent_output"]["text"] == "The site is zoned SF-3..."
 
 

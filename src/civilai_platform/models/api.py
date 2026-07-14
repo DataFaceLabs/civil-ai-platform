@@ -1,9 +1,10 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from civilai_platform.models.entities import (
+    AgentRun,
     Client,
     ClientContact,
     ClientNote,
@@ -11,17 +12,13 @@ from civilai_platform.models.entities import (
     FeasibilityDocumentRef,
     FieldValue,
     MapExhibit,
-    LlmBaselineTemplate,
     MembershipStatus,
     Project,
     ProjectState,
     Role,
     Section,
     Tenant,
-    TenantLlmConfig,
-    TenantMembership,
     TenantStatus,
-    UserProfile,
     VerificationStep,
 )
 
@@ -335,6 +332,11 @@ class AgentRunCreate(BaseModel):
     proposed_use: str | None = None
     thread_memory: str = ""
     section_body_plain: str = ""
+    mode: Literal["generate", "refine"] = "generate"
+    # Explicitly present (including "") means the caller supplied analyst guidance.
+    # None preserves backwards compatibility by treating request as the guidance.
+    user_guidance: str | None = None
+    fields_unchanged: bool = False
 
 
 class AgentRunResponse(BaseModel):
@@ -358,8 +360,6 @@ class AgentRunResponse(BaseModel):
 
     @classmethod
     def from_entity(cls, run: "AgentRun") -> "AgentRunResponse":
-        from civilai_platform.models.entities import AgentRun
-
         assert isinstance(run, AgentRun)
         return cls(
             run_id=run.run_id,

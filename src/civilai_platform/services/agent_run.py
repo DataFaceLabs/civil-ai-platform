@@ -11,6 +11,7 @@ from civilai_platform.models.entities import AgentRun, AgentRunStatus, new_id, u
 from civilai_platform.services import agent_corpus
 from civilai_platform.services import artifacts as artifact_svc
 from civilai_platform.services import llm_config as llm_config_svc
+from civilai_platform.services.agent_prompt import resolve_section_agent_prompt
 from civilai_platform.services.audit import record_audit
 from civilai_platform.services.search_policy import resolve_chat_prompts, resolve_search_run_policy
 from civilai_platform.store.base import PlatformStore
@@ -60,7 +61,9 @@ def _invoke_strands_agent(context_payload: dict[str, Any], *, dry_run: bool) -> 
         else SearchRunPolicy()
     )
     instructions_raw = context_payload.get("chat_instructions") or []
-    chat_instructions = tuple(str(item) for item in instructions_raw) if isinstance(instructions_raw, list) else ()
+    chat_instructions = (
+        tuple(str(item) for item in instructions_raw) if isinstance(instructions_raw, list) else ()
+    )
 
     context = WorkbenchContext(
         project_id=str(context_payload["project_id"]),
@@ -69,11 +72,17 @@ def _invoke_strands_agent(context_payload: dict[str, Any], *, dry_run: bool) -> 
         proposed_use=context_payload.get("proposed_use"),
         user_role=str(context_payload.get("user_role", "analyst")),
         request=str(context_payload["request"]),
+        client_request=str(context_payload.get("client_request") or ""),
         workflow=workflow,
         field_context=dict(context_payload.get("field_context") or {}),
         tenant_id=context_payload.get("tenant_id"),
         user_id=context_payload.get("user_id"),
         search_run_policy=search_run_policy,
+        system_prompt=str(context_payload.get("system_prompt") or ""),
+        model_id=context_payload.get("model_id"),
+        temperature=context_payload.get("temperature"),
+        guardrails=dict(context_payload.get("guardrails") or {}),
+        prompt_config=dict(context_payload.get("prompt_config") or {}),
         thread_memory=str(context_payload.get("thread_memory") or ""),
         section_body_plain=str(context_payload.get("section_body_plain") or ""),
         tenant_name=context_payload.get("tenant_name"),
@@ -130,23 +139,55 @@ def _build_context_payload(
     proposed_use: str | None,
     thread_memory: str,
     section_body_plain: str,
+    mode: str,
+    user_guidance: str | None,
+    fields_unchanged: bool,
 ) -> dict[str, Any]:
-    tenant_llm = llm_config_svc.get_tenant_llm_response(store, tenant_id).config
+    tenant_llm_response = llm_config_svc.get_tenant_llm_response(store, tenant_id)
+    tenant_llm = tenant_llm_response.config
     tenant = store.get_tenant(tenant_id)
     project = store.get_project(tenant_id, project_id)
     resolved_entity_id = entity_id or _entity_id_from_state(store, tenant_id, project_id)
     resolved_field_context = field_context or {}
-    search_run_policy = resolve_search_run_policy(
-        tenant_llm,
-        active_section_id=active_section_id,
-        field_context=resolved_field_context,
-    )
     chat_system_prompt, chat_instructions = resolve_chat_prompts(tenant_llm)
+    request = request_text
+    system_prompt = ""
+    model_id = None
+    temperature = None
+    guardrails: dict[str, Any] = {}
+    prompt_config: dict[str, Any] = {}
+    if workflow == "section_draft" and active_section_id:
+        guidance = request_text if user_guidance is None else user_guidance
+        resolved_prompt = resolve_section_agent_prompt(
+            tenant_llm,
+            config_version=tenant_llm_response.version,
+            section_id=active_section_id,
+            field_context=resolved_field_context,
+            mode="refine" if mode == "refine" else "generate",
+            user_guidance=guidance,
+            thread_memory=thread_memory,
+            section_body_plain=section_body_plain,
+            fields_unchanged=fields_unchanged,
+        )
+        request = resolved_prompt.rendered_prompt
+        system_prompt = resolved_prompt.system_prompt
+        model_id = resolved_prompt.model_id
+        temperature = resolved_prompt.temperature
+        guardrails = resolved_prompt.guardrails
+        search_run_policy = resolved_prompt.search_run_policy
+        prompt_config = resolved_prompt.metadata()
+    else:
+        search_run_policy = resolve_search_run_policy(
+            tenant_llm,
+            active_section_id=active_section_id,
+            field_context=resolved_field_context,
+        )
     return {
         "project_id": project_id,
         "tenant_id": tenant_id,
         "user_id": actor_user_id,
-        "request": request_text,
+        "request": request,
+        "client_request": request_text,
         "entity_id": resolved_entity_id,
         "active_section_id": active_section_id,
         "workflow": workflow,
@@ -159,6 +200,11 @@ def _build_context_payload(
         "project_name": project.name if project else None,
         "property_address": project.address if project else None,
         "search_run_policy": search_run_policy,
+        "system_prompt": system_prompt,
+        "model_id": model_id,
+        "temperature": temperature,
+        "guardrails": guardrails,
+        "prompt_config": prompt_config,
         "chat_system_prompt": chat_system_prompt,
         "chat_instructions": list(chat_instructions),
         "llm_config": tenant_llm,
@@ -209,9 +255,21 @@ def _execute_agent_run(
             proposed_use=context_payload.get("proposed_use"),
             output_text=response.get("message"),
             trace_summary=dict(response.get("trace_summary") or {}),
-            model={"preset": tenant_llm.get("modelPreset") if isinstance(tenant_llm, dict) else None},
-            chat_system_prompt=str(context_payload.get("chat_system_prompt") or ""),
+            model={
+                "preset": (context_payload.get("prompt_config") or {}).get("model_preset")
+                or (tenant_llm.get("modelPreset") if isinstance(tenant_llm, dict) else None),
+                "model_id": context_payload.get("model_id"),
+                "config_version": (context_payload.get("prompt_config") or {}).get(
+                    "config_version"
+                ),
+            },
+            chat_system_prompt=str(
+                context_payload.get("system_prompt")
+                or context_payload.get("chat_system_prompt")
+                or ""
+            ),
             chat_instructions=list(context_payload.get("chat_instructions") or []),
+            prompt_config=dict(context_payload.get("prompt_config") or {}),
         )
     except Exception as exc:
         logger.exception("agent run failed")
@@ -301,27 +359,14 @@ def start_agent_run(
     proposed_use: str | None = None,
     thread_memory: str = "",
     section_body_plain: str = "",
+    mode: str = "generate",
+    user_guidance: str | None = None,
+    fields_unchanged: bool = False,
     actor_role: str | None = None,
 ) -> AgentRun:
     now = utc_now()
     run_id = new_id()
     prefix = agent_run_s3_prefix(tenant_id, project_id, run_id)
-    run = AgentRun(
-        run_id=run_id,
-        tenant_id=tenant_id,
-        project_id=project_id,
-        actor_user_id=actor_user_id,
-        status=AgentRunStatus.RUNNING,
-        workflow=workflow,
-        request=request_text,
-        entity_id=entity_id,
-        active_section_id=active_section_id,
-        s3_prefix=prefix,
-        created_at=now,
-        updated_at=now,
-    )
-    store.put_agent_run(run)
-
     context_payload = _build_context_payload(
         store,
         tenant_id=tenant_id,
@@ -335,11 +380,25 @@ def start_agent_run(
         proposed_use=proposed_use,
         thread_memory=thread_memory,
         section_body_plain=section_body_plain,
+        mode=mode,
+        user_guidance=user_guidance,
+        fields_unchanged=fields_unchanged,
     )
-    # Persist resolved entity on the run record for clients that poll.
-    if context_payload.get("entity_id") and not run.entity_id:
-        run = run.model_copy(update={"entity_id": str(context_payload["entity_id"])})
-        store.put_agent_run(run)
+    run = AgentRun(
+        run_id=run_id,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        actor_user_id=actor_user_id,
+        status=AgentRunStatus.RUNNING,
+        workflow=workflow,
+        request=str(context_payload.get("request") or request_text),
+        entity_id=context_payload.get("entity_id") or entity_id,
+        active_section_id=active_section_id,
+        s3_prefix=prefix,
+        created_at=now,
+        updated_at=now,
+    )
+    store.put_agent_run(run)
 
     # Async when explicitly enabled (UAT/prod behind API Gateway's ~29s cap).
     # Local tests stay synchronous so TestClient assertions keep working.
