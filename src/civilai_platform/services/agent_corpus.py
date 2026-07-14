@@ -131,8 +131,16 @@ def capture_draft(
     output_text: str | None,
     trace_summary: dict[str, Any] | None = None,
     model: dict[str, Any] | None = None,
+    chat_system_prompt: str | None = None,
+    chat_instructions: list[str] | tuple[str, ...] | None = None,
 ) -> None:
-    """Record an agent draft/regeneration for a section."""
+    """Record an agent draft/regeneration for a section.
+
+    ``input_context`` is the section's *initiate state* for this run: the full
+    data-pull blob (``field_context``), proposed use, sectionwise request, and the
+    tenant Lab chat prompts that actually steered the agent. Same shape for every
+    section (parcel, zoning, utilities, …) — not parcel-only.
+    """
     if not section_id:  # untargeted runs (e.g. project-wide chat) aren't section events
         return
     record = _base_event(
@@ -147,9 +155,12 @@ def capture_draft(
     record["run_id"] = run_id
     record["model"] = model or {}
     record["input_context"] = {
+        # Initiate state: address / parcel identifiers / full governed data pull live here.
         "field_context": _redact_field_context(field_context or {}),
         "proposed_use": proposed_use,
-        "request": request_text,
+        "request": request_text,  # sectionwise prompt the FE/agent received
+        "chat_system_prompt": chat_system_prompt or "",
+        "chat_instructions": [str(item) for item in (chat_instructions or ())],
     }
     record["agent_output"] = {"text": output_text, "trace_summary": trace_summary or {}}
     _put_event(record)

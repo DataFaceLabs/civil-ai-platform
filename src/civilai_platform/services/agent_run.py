@@ -210,6 +210,8 @@ def _execute_agent_run(
             output_text=response.get("message"),
             trace_summary=dict(response.get("trace_summary") or {}),
             model={"preset": tenant_llm.get("modelPreset") if isinstance(tenant_llm, dict) else None},
+            chat_system_prompt=str(context_payload.get("chat_system_prompt") or ""),
+            chat_instructions=list(context_payload.get("chat_instructions") or []),
         )
     except Exception as exc:
         logger.exception("agent run failed")
