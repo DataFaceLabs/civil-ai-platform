@@ -149,6 +149,13 @@ data "aws_iam_policy_document" "lambda" {
       "arn:aws:ssm:${var.aws_region}:*:parameter/civilai/${var.environment}/*",
     ]
   }
+
+  statement {
+    sid       = "SelfInvokeAsyncAgent"
+    effect    = "Allow"
+    actions   = ["lambda:InvokeFunction"]
+    resources = ["arn:aws:lambda:${var.aws_region}:*:function:${local.name_prefix}-api"]
+  }
 }
 
 resource "aws_iam_role" "lambda" {
@@ -191,8 +198,10 @@ resource "aws_lambda_function" "platform" {
   # aarch64-manylinux2014 -- must match, or compiled extensions fail to import at cold
   # start ("No module named 'pydantic_core._pydantic_core'") since the default here is x86_64.
   architectures = ["arm64"]
-  timeout       = 29
-  memory_size   = 512
+  # Sync API Gateway requests must return in <=29s. Live Strands runs enqueue an
+  # async self-invoke (CIVILAI_AGENT_ASYNC=true) that needs a longer worker window.
+  timeout       = 300
+  memory_size   = 1024
 
   filename         = var.lambda_package_path
   source_code_hash = filebase64sha256(var.lambda_package_path)
@@ -210,6 +219,10 @@ resource "aws_lambda_function" "platform" {
       CIVILAI_DATA_SERVICE_KEY   = var.data_service_key
       CIVILAI_COGNITO_USER_POOL_ID = var.cognito_user_pool_id
       CIVILAI_COGNITO_APP_CLIENT_ID = var.cognito_client_id
+      # Live Strands agent (false). Local tests / e2e-platform.sh override to true.
+      CIVILAI_AGENT_DRY_RUN = "false"
+      # Return HTTP immediately; complete via Lambda Event self-invoke (API GW 29s cap).
+      CIVILAI_AGENT_ASYNC = "true"
       # API Gateway's own cors_configuration below already scopes allow_origins to "*" at
       # the edge; matching it here (rather than the app's localhost-only default) is what
       # lets FastAPI's CORSMiddleware answer the OPTIONS preflight route (see
