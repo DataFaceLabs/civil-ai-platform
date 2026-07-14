@@ -48,6 +48,10 @@ MIN_FIELD_CONTEXT_KEYS = 20
 SECTIONS_TO_DRAFT = ("parcel", "zoning")
 
 
+def _nonempty(value: object) -> str:
+    return str(value or "").strip()
+
+
 def _session() -> boto3.Session:
     return boto3.Session(profile_name=AWS_PROFILE, region_name=AWS_REGION)
 
@@ -363,10 +367,26 @@ def main() -> int:
                 return _fail(f"{section}: thin field_context ({len(fc)})")
             if fc.get("owner_name") != "[redacted]":
                 return _fail(f"{section}: owner_name not redacted ({fc.get('owner_name')!r})")
-            if f"Generate feasibility language for the {section} section" not in request:
-                return _fail(f"{section}: sectionwise prompt missing from request")
-            if "Governed fields:" not in request:
-                return _fail(f"{section}: governed fields block missing from request")
+            section_label = section.replace("_", " ").title()
+            if (
+                f'drafting the "{section_label}"' not in request
+                and f"Draft concise feasibility-study language for the {section} section"
+                not in request
+            ):
+                return _fail(f"{section}: Prompt Lab section prompt missing from request")
+            prompt_config = ic.get("prompt_config") or {}
+            if not isinstance(prompt_config, dict) or not prompt_config:
+                return _fail(f"{section}: prompt_config missing from input_context")
+            if prompt_config.get("section_id") != section:
+                return _fail(
+                    f"{section}: prompt_config.section_id={prompt_config.get('section_id')!r}"
+                )
+            if not _nonempty(prompt_config.get("rendered_prompt")):
+                return _fail(f"{section}: prompt_config.rendered_prompt empty")
+            if not _nonempty(prompt_config.get("model_id")):
+                return _fail(f"{section}: prompt_config.model_id empty")
+            if prompt_config.get("config_version") is None:
+                return _fail(f"{section}: prompt_config.config_version missing")
             if not (ao.get("text") or "").strip():
                 return _fail(f"{section}: empty agent_output.text")
             if "chat_system_prompt" not in ic:
@@ -375,7 +395,9 @@ def main() -> int:
                 return _fail(f"{section}: chat_instructions missing from input_context")
             print(
                 f"  lab_prompt_chars={len(ic.get('chat_system_prompt') or '')}  "
-                f"lab_instructions={len(ic.get('chat_instructions') or [])}"
+                f"lab_instructions={len(ic.get('chat_instructions') or [])}  "
+                f"prompt_config_version={prompt_config.get('config_version')}  "
+                f"model_preset={prompt_config.get('model_preset')!r}"
             )
             if entity_id and draft.get("entity_id") not in (entity_id, None):
                 # Prefer exact match; None is a known FE gap we still flag.
