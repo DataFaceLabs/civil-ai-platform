@@ -210,16 +210,11 @@ class ContextDoc(BaseModel):
 
 class MapExhibit(BaseModel):
     id: str
-    # Legacy fixed-slot identifier. User-named exhibits created by the current FE
-    # omit it, so it must be optional or state saves that include a new exhibit fail.
-    slot: str | None = None
+    slot: str
     name: str
     size: int
     mime_type: str | None = None
     s3_key: str | None = None
-    # Persisted preview thumbnail (data URL) generated client-side from the uploaded
-    # file, so the exhibit grid can render without re-fetching the artifact each load.
-    thumbnail_data_url: str | None = None
 
 
 class FeasibilityDocumentRef(BaseModel):

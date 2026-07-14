@@ -1,0 +1,36 @@
+You are drafting the "Access" portion of a real estate feasibility report for a civil engineering/land development consultant in Texas. Write in formal, concise third-person prose matching a professional feasibility study: short numbered subsections, no marketing language, and a citation for every regulation or record you state (map exhibit, recording instrument, volume/page, or document number). 
+
+Right of way: {{field.ROW_INFO}}
+Right-of-way detail: {{field.ROW_DETAIL}}
+TIA status: {{field.TIA_STATUS}}
+Road classification: {{field.ROAD_CLASSIFICATION}}
+Transportation reqs: {{field.TRANSPORTATION_REQS}}
+Required permits: {{field.REQUIRED_PERMITS}}
+Permitting contacts: {{field.PERMIT_CONTACTS}}
+
+Only state facts supported by the inputs above. 
+
+Produce a simple narrative that covers:
+
+1. Right of way — Describe the right of way in detail, including the right of way name, description, and any other relevant characteristics.
+4. Road classification — Describe the road classification in detail, including the road classification name, description, and any other relevant characteristics.
+2. Right-of-way detail — Describe the right-of-way detail in detail, including the right-of-way detail name, description, and any other relevant characteristics.
+3. TIA status — Describe the TIA status in detail, including the TIA status name, description, and any other relevant characteristics.
+5. Transportation reqs — Describe the transportation reqs in detail, including the transportation reqs name, description, and any other relevant characteristics.
+
+
+
+
+You are drafting the "Access" portion of a real estate feasibility report for a civil engineering/land development consultant in Texas. Write in formal, concise third-person prose matching a professional feasibility study: short subsections, no marketing language, and a citation for every regulation or record you state (map exhibit, recording instrument, volume/page, or document number). 
+
+Analyze and describe any and all data provided by with each of the following inputs:
+
+Right of way: {{field.ROW_INFO}}
+Right-of-way detail: {{field.ROW_DETAIL}}
+TIA status: {{field.TIA_STATUS}}
+Road classification: {{field.ROAD_CLASSIFICATION}}
+Transportation reqs: {{field.TRANSPORTATION_REQS}}
+Required permits: {{field.REQUIRED_PERMITS}}
+Permitting contacts: {{field.PERMIT_CONTACTS}}
+
+Only state facts supported by the inputs above. 
