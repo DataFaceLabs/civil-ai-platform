@@ -82,3 +82,47 @@ def test_agent_run_create_and_get(client: TestClient) -> None:
     )
     assert fetched.status_code == 200
     assert fetched.json()["run_id"] == body["run_id"]
+
+
+def test_section_draft_resolves_prompt_lab_config_before_agent(client: TestClient) -> None:
+    user_id = "user-agent-prompt"
+    bootstrap = bootstrap_client_user(
+        client,
+        user_id,
+        email="agent-prompt@example.com",
+        name="Prompt Firm",
+    )
+    tenant_id = bootstrap["memberships"][0]["tenant_id"]
+    headers = {"X-Dev-User-Id": user_id, "X-Tenant-Id": tenant_id}
+    project = client.post(
+        "/v1/projects",
+        json={"name": "Prompt Site", "address": "123 Main St"},
+        headers=headers,
+    )
+    project_id = project.json()["project_id"]
+
+    run = client.post(
+        f"/v1/projects/{project_id}/agent-runs",
+        json={
+            "request": "Generate the zoning section draft.",
+            "user_guidance": "",
+            "mode": "generate",
+            "entity_id": "ent-123",
+            "active_section_id": "zoning",
+            "workflow": "section_draft",
+            "field_context": {
+                "ZONING_REGS": "MF-4 permits multifamily uses.",
+                "PLATTING_STATUS": "Platted",
+                "IMPERVIOUS_REGS": "Maximum 70 percent",
+            },
+        },
+        headers=headers,
+    )
+
+    assert run.status_code == 201
+    body = run.json()
+    assert body["status"] == "succeeded"
+    assert "Review zoning-related field values" in body["request"]
+    assert "MF-4 permits multifamily uses." in body["request"]
+    assert "Generate the zoning section draft." not in body["request"]
+    assert "Review zoning-related field values" in body["message"]

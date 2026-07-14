@@ -133,6 +133,7 @@ def capture_draft(
     model: dict[str, Any] | None = None,
     chat_system_prompt: str | None = None,
     chat_instructions: list[str] | tuple[str, ...] | None = None,
+    prompt_config: dict[str, Any] | None = None,
 ) -> None:
     """Record an agent draft/regeneration for a section.
 
@@ -161,6 +162,8 @@ def capture_draft(
         "request": request_text,  # sectionwise prompt the FE/agent received
         "chat_system_prompt": chat_system_prompt or "",
         "chat_instructions": [str(item) for item in (chat_instructions or ())],
+        # Immutable resolved Prompt Lab snapshot for replay/debugging.
+        "prompt_config": prompt_config or {},
     }
     record["agent_output"] = {"text": output_text, "trace_summary": trace_summary or {}}
     _put_event(record)
