@@ -51,6 +51,14 @@ def state_sk(project_id: str) -> str:
     return f"STATE#{project_id}"
 
 
+def project_activity_sk(project_id: str, event_id: str) -> str:
+    return f"ACTIVITY#{project_id}#{event_id}"
+
+
+def project_activity_prefix(project_id: str) -> str:
+    return f"ACTIVITY#{project_id}#"
+
+
 def profile_sk() -> str:
     return "PROFILE"
 

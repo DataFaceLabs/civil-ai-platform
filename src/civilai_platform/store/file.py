@@ -8,6 +8,7 @@ from civilai_platform.models.entities import (
     AuditEvent,
     Client,
     Project,
+    ProjectActivity,
     ProjectState,
     Tenant,
     TenantMembership,
@@ -62,6 +63,10 @@ class FileStore(MemoryStore):
             tuple(k.split(":", 1)): ProjectState.model_validate(v)  # type: ignore[misc]
             for k, v in raw.get("states", {}).items()
         }
+        self._project_activity = {
+            tuple(k.split(":", 2)): ProjectActivity.model_validate(v)
+            for k, v in raw.get("project_activity", {}).items()
+        }
         self._audit = [AuditEvent.model_validate(v) for v in raw.get("audit", [])]
         self._platform_admins = set(raw.get("platform_admins", []))
 
@@ -85,6 +90,10 @@ class FileStore(MemoryStore):
                 "states": {
                     _pair_key(tid, pid): s.model_dump(mode="json")
                     for (tid, pid), s in self._states.items()
+                },
+                "project_activity": {
+                    f"{tid}:{pid}:{eid}": event.model_dump(mode="json")
+                    for (tid, pid, eid), event in self._project_activity.items()
                 },
                 "audit": [e.model_dump(mode="json") for e in self._audit],
                 "platform_admins": sorted(self._platform_admins),
@@ -137,6 +146,14 @@ class FileStore(MemoryStore):
 
     def put_project_state(self, state: ProjectState) -> None:
         super().put_project_state(state)
+        self._save()
+
+    def put_project_activity(self, event: ProjectActivity) -> None:
+        super().put_project_activity(event)
+        self._save()
+
+    def delete_project_activity(self, tenant_id: str, project_id: str, event_id: str) -> None:
+        super().delete_project_activity(tenant_id, project_id, event_id)
         self._save()
 
     def put_audit_event(self, event: AuditEvent) -> None:

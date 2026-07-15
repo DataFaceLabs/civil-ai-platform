@@ -6,6 +6,7 @@ from civilai_platform.models.entities import (
     Client,
     LlmBaselineTemplate,
     Project,
+    ProjectActivity,
     ProjectState,
     Tenant,
     TenantLlmConfig,
@@ -23,6 +24,7 @@ class MemoryStore(PlatformStore):
         self._clients: dict[tuple[str, str], Client] = {}
         self._projects: dict[tuple[str, str], Project] = {}
         self._states: dict[tuple[str, str], ProjectState] = {}
+        self._project_activity: dict[tuple[str, str, str], ProjectActivity] = {}
         self._audit: list[AuditEvent] = []
         self._platform_admins: set[str] = set()
         self._agent_runs: dict[tuple[str, str, str], AgentRun] = {}
@@ -142,12 +144,39 @@ class MemoryStore(PlatformStore):
     def delete_project(self, tenant_id: str, project_id: str) -> None:
         self._projects.pop((tenant_id, project_id), None)
         self._states.pop((tenant_id, project_id), None)
+        self._project_activity = {
+            key: event
+            for key, event in self._project_activity.items()
+            if key[:2] != (tenant_id, project_id)
+        }
 
     def put_project_state(self, state: ProjectState) -> None:
         self._states[(state.tenant_id, state.project_id)] = state
 
     def get_project_state(self, tenant_id: str, project_id: str) -> ProjectState | None:
         return self._states.get((tenant_id, project_id))
+
+    def put_project_activity(self, event: ProjectActivity) -> None:
+        self._project_activity[(event.tenant_id, event.project_id, event.event_id)] = event
+
+    def get_project_activity(
+        self, tenant_id: str, project_id: str, event_id: str
+    ) -> ProjectActivity | None:
+        return self._project_activity.get((tenant_id, project_id, event_id))
+
+    def list_project_activity(
+        self, tenant_id: str, project_id: str, limit: int = 200
+    ) -> list[ProjectActivity]:
+        events = [
+            event
+            for (tid, pid, _), event in self._project_activity.items()
+            if tid == tenant_id and pid == project_id
+        ]
+        events.sort(key=lambda event: (event.created_at, event.event_id), reverse=True)
+        return events[:limit]
+
+    def delete_project_activity(self, tenant_id: str, project_id: str, event_id: str) -> None:
+        self._project_activity.pop((tenant_id, project_id, event_id), None)
 
     def put_audit_event(self, event: AuditEvent) -> None:
         self._audit.append(event)

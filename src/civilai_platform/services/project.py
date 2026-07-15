@@ -16,6 +16,7 @@ from civilai_platform.models.entities import (
 from civilai_platform.services import agent_corpus
 from civilai_platform.services.audit import record_audit
 from civilai_platform.services.client import sync_client_fields_to_sections
+from civilai_platform.services.project_activity import record_project_activity
 from civilai_platform.store.base import PlatformStore
 
 WORKFLOW_STEPS = [
@@ -72,6 +73,16 @@ def create_project(
     )
     store.put_project(project)
     store.put_project_state(state)
+    record_project_activity(
+        store,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        actor_user_id=actor_user_id,
+        event_type="project_created",
+        section_id="client",
+        content="Project created",
+        created_at=now,
+    )
     record_audit(
         tenant_id=tenant_id,
         actor_user_id=actor_user_id,

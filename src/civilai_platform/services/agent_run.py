@@ -13,6 +13,7 @@ from civilai_platform.services import artifacts as artifact_svc
 from civilai_platform.services import llm_config as llm_config_svc
 from civilai_platform.services.agent_prompt import resolve_section_agent_prompt
 from civilai_platform.services.audit import record_audit
+from civilai_platform.services.project_activity import record_project_activity
 from civilai_platform.services.search_policy import resolve_chat_prompts, resolve_search_run_policy
 from civilai_platform.store.base import PlatformStore
 from civilai_platform.store.keys import agent_run_s3_prefix
@@ -271,6 +272,22 @@ def _execute_agent_run(
             chat_instructions=list(context_payload.get("chat_instructions") or []),
             prompt_config=dict(context_payload.get("prompt_config") or {}),
         )
+        if run.workflow == "section_draft" and run.active_section_id:
+            record_project_activity(
+                store,
+                tenant_id=run.tenant_id,
+                project_id=run.project_id,
+                actor_user_id=run.actor_user_id,
+                event_id=run.run_id,
+                event_type="section_draft_created",
+                section_id=run.active_section_id,
+                content="Section draft generated",
+                detail={
+                    "run_id": run.run_id,
+                    "model_id": context_payload.get("model_id"),
+                },
+                created_at=completed,
+            )
     except Exception as exc:
         logger.exception("agent run failed")
         failed = utc_now()
