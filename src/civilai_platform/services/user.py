@@ -17,7 +17,7 @@ from civilai_platform.models.entities import (
 )
 from civilai_platform.services import platform_tenant as platform_tenant_svc
 from civilai_platform.services.audit import record_audit
-from civilai_platform.services.cognito import get_cognito_provisioner
+from civilai_platform.services.cognito import CognitoProvisionError, get_cognito_provisioner
 from civilai_platform.store.base import PlatformStore
 
 
@@ -44,6 +44,11 @@ def create_user(
     actor_user_id: str,
     data: UserCreate,
 ) -> UserResponse:
+    """Create (or re-invite) a tenant user.
+
+    Re-inviting a previously deleted user must succeed: tenant delete only removes
+    membership and disables Cognito, leaving an orphaned profile + Cognito account.
+    """
     temporary_password: str | None = None
     existing_profile = _profile_by_email(store, data.email)
     if existing_profile:
@@ -52,26 +57,61 @@ def create_user(
         if existing_membership:
             raise UserConflictError("User already belongs to this tenant")
         user_id = existing_profile.user_id
-        profile = existing_profile
-    else:
-        cognito_sub, temporary_password = get_cognito_provisioner().provision_user(
-            email=data.email,
-            first_name=data.first_name,
-            last_name=data.last_name,
-            password=data.password,
-            invite=data.invite,
+        now = utc_now()
+        profile = existing_profile.model_copy(
+            update={
+                "first_name": data.first_name,
+                "last_name": data.last_name,
+                "phone": data.phone,
+                "updated_at": now,
+            }
         )
+        store.put_user_profile(profile)
+        if data.invite and not data.password:
+            # Cognito account is typically disabled after tenant delete — re-enable
+            # and rotate the temporary password so the invite is usable.
+            _, temporary_password = get_cognito_provisioner().reinvite_existing_user(
+                email=data.email,
+                first_name=data.first_name,
+                last_name=data.last_name,
+                send_email=True,
+            )
+    else:
+        try:
+            cognito_sub, temporary_password = get_cognito_provisioner().provision_user(
+                email=data.email,
+                first_name=data.first_name,
+                last_name=data.last_name,
+                password=data.password,
+                invite=data.invite,
+            )
+        except CognitoProvisionError as exc:
+            raise UserConflictError(str(exc)) from exc
         user_id = cognito_sub or new_id()
         now = utc_now()
-        profile = UserProfile(
-            user_id=user_id,
-            email=data.email,
-            first_name=data.first_name,
-            last_name=data.last_name,
-            phone=data.phone,
-            created_at=now,
-            updated_at=now,
-        )
+        # Re-invite via Cognito UsernameExists returns the existing sub — reuse
+        # the orphaned profile when present instead of overwriting created_at.
+        existing_by_id = store.get_user_profile(user_id)
+        if existing_by_id:
+            profile = existing_by_id.model_copy(
+                update={
+                    "email": data.email,
+                    "first_name": data.first_name,
+                    "last_name": data.last_name,
+                    "phone": data.phone,
+                    "updated_at": now,
+                }
+            )
+        else:
+            profile = UserProfile(
+                user_id=user_id,
+                email=data.email,
+                first_name=data.first_name,
+                last_name=data.last_name,
+                phone=data.phone,
+                created_at=now,
+                updated_at=now,
+            )
         store.put_user_profile(profile)
 
     now = utc_now()
@@ -453,6 +493,12 @@ def activate_invited_memberships(store: PlatformStore, user_id: str) -> None:
 
 
 def _profile_by_email(store: PlatformStore, email: str) -> UserProfile | None:
+    """Resolve a profile by email, including orphaned (no-membership) users.
+
+    Membership-only lookup misses users deleted from a tenant: delete removes the
+    membership and disables Cognito but leaves the profile. Fall back to Cognito
+    ``sub`` → profile PK when the membership scan finds nothing.
+    """
     normalized = email.strip().lower()
     matches: list[UserProfile] = []
     seen: set[str] = set()
@@ -470,12 +516,19 @@ def _profile_by_email(store: PlatformStore, email: str) -> UserProfile | None:
         profile = store.get_user_profile(user_id)
         if profile and profile.email.strip().lower() == normalized:
             matches.append(profile)
-    if not matches:
+    if matches:
+        if len(matches) == 1:
+            return matches[0]
+        canonical = [p for p in matches if not is_dev_user_id(p.user_id)]
+        return canonical[0] if canonical else matches[0]
+
+    cognito_sub = get_cognito_provisioner().get_user_sub(email.strip())
+    if not cognito_sub or cognito_sub in seen:
         return None
-    if len(matches) == 1:
-        return matches[0]
-    canonical = [p for p in matches if not is_dev_user_id(p.user_id)]
-    return canonical[0] if canonical else matches[0]
+    orphaned = store.get_user_profile(cognito_sub)
+    if orphaned and orphaned.email.strip().lower() == normalized:
+        return orphaned
+    return None
 
 
 def _to_response(
