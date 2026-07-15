@@ -109,6 +109,22 @@ class TenantLlmInvokeRequest(BaseModel):
     web_search_enabled: bool | None = None
 
 
+class LlmInvokeJobResponse(BaseModel):
+    """Returned when LLM invoke runs asynchronously (API Gateway ~29s cap)."""
+
+    async_: bool = Field(True, alias="async")
+    job_id: str
+    status: str
+    step_key: str
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+    model_config = {"populate_by_name": True}
+
+
 class LogoPresignResponse(BaseModel):
     upload_url: str
     s3_key: str

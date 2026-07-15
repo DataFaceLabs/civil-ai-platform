@@ -222,7 +222,9 @@ resource "aws_lambda_function" "platform" {
       CIVILAI_COGNITO_APP_CLIENT_ID = var.cognito_client_id
       # Live Strands agent (false). Local tests / e2e-platform.sh override to true.
       CIVILAI_AGENT_DRY_RUN = "false"
-      # Return HTTP immediately; complete via Lambda Event self-invoke (API GW 29s cap).
+      # Return HTTP immediately for agent-runs and tenant LLM invoke; complete via
+      # Lambda Event self-invoke (API Gateway ~29s sync cap). Also read as
+      # CIVILAI_LLM_ASYNC default by llm_invoke.llm_invoke_async_enabled().
       CIVILAI_AGENT_ASYNC = "true"
       # API Gateway's own cors_configuration below already scopes allow_origins to "*" at
       # the edge; matching it here (rather than the app's localhost-only default) is what

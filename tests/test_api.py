@@ -512,6 +512,76 @@ def test_tenant_llm_invoke_uses_proxy(monkeypatch: pytest.MonkeyPatch, client: T
     assert "Draft" in res.json()["text"]
 
 
+def test_tenant_llm_invoke_async_job_and_poll(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """When async is on, POST returns a job; worker completion is pollable via GET."""
+    monkeypatch.setenv("CIVILAI_LLM_ASYNC", "true")
+    boot = _bootstrap(client, "async-invoke-user", name="Async Invoke Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers("async-invoke-user", tenant_id)
+    store = get_store()
+    store.set_platform_admin("async-invoke-user", True)
+    platform_tenant_svc.ensure_platform_admin_membership(store, "async-invoke-user")
+
+    enqueued: list[dict] = []
+
+    def _fake_enqueue(*, tenant_id: str, job_id: str) -> None:
+        enqueued.append({"tenant_id": tenant_id, "job_id": job_id})
+
+    monkeypatch.setattr(
+        "civilai_platform.services.llm_invoke._enqueue_async_completion",
+        _fake_enqueue,
+    )
+    res = client.post(
+        "/v1/tenant/llm/invoke",
+        json={
+            "step_key": "draft",
+            "user_prompt": "Polish merged sections.",
+            "field_context": {"PROPERTY_ADDRESS": "123 Main St"},
+        },
+        headers=h,
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["async"] is True
+    assert body["status"] == "running"
+    assert body["job_id"]
+    assert body["result"] is None
+    assert len(enqueued) == 1
+
+    def _fake_invoke(self, body, *, step_key=None, **_kwargs):  # noqa: ANN001
+        assert step_key == "draft"
+        return {
+            "text": "## Parcel\n\nPolished draft.",
+            "model_id": body["model_id"],
+            "latency_ms": 42,
+            "guardrail_warnings": [],
+            "parse_errors": [],
+            "web_search_trace": [],
+        }
+
+    monkeypatch.setattr(
+        "civilai_platform.services.data_proxy.DataProxyClient.invoke_llm",
+        _fake_invoke,
+    )
+    from civilai_platform.services import llm_invoke as llm_invoke_svc
+
+    completed = llm_invoke_svc.complete_llm_invoke_from_event(
+        store,
+        {"tenant_id": tenant_id, "job_id": body["job_id"]},
+    )
+    assert completed is not None
+    assert completed.status.value == "succeeded"
+
+    polled = client.get(f"/v1/tenant/llm/invoke/{body['job_id']}", headers=h)
+    assert polled.status_code == 200
+    polled_body = polled.json()
+    assert polled_body["async"] is True
+    assert polled_body["status"] == "succeeded"
+    assert "Polished" in polled_body["result"]["text"]
+
+
 def test_tenant_llm_invoke_draft_mode_forces_text_and_higher_token_cap(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,

@@ -6,6 +6,7 @@ from civilai_platform.models.entities import (
     AuditEvent,
     Client,
     LlmBaselineTemplate,
+    LlmInvokeJob,
     Project,
     ProjectActivity,
     ProjectState,
@@ -158,3 +159,10 @@ class PlatformStore(ABC):
 
     @abstractmethod
     def list_agent_runs(self, tenant_id: str, project_id: str, limit: int = 50) -> list[AgentRun]: ...
+
+    # --- LLM invoke jobs (async section/draft invoke) ---
+    @abstractmethod
+    def put_llm_invoke_job(self, job: LlmInvokeJob) -> None: ...
+
+    @abstractmethod
+    def get_llm_invoke_job(self, tenant_id: str, job_id: str) -> LlmInvokeJob | None: ...

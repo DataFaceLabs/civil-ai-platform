@@ -33,7 +33,8 @@ Tenants are addressed in the FE at `/fstudio/{url_slug}/…`. Public branding (n
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET/PATCH | `/v1/tenant/llm-config` | Tenant LLM copy |
-| POST | `/v1/tenant/llm/invoke` | Section LLM invoke (loads tenant config server-side) |
+| POST | `/v1/tenant/llm/invoke` | Section LLM invoke (loads tenant config server-side). When `CIVILAI_AGENT_ASYNC`/`CIVILAI_LLM_ASYNC` is on (UAT), returns an async job envelope (`{"async": true, "job_id", "status"}`) so the client can poll past API Gateway's ~29s cap. |
+| GET | `/v1/tenant/llm/invoke/{job_id}` | Poll async LLM invoke job until `succeeded`/`failed` |
 | POST | `/v1/tenant/logo` | Presigned logo upload |
 | POST | `/v1/users` | Invite user by email (`invite: true` default) |
 

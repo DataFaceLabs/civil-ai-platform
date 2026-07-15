@@ -1,16 +1,45 @@
-"""Platform-mediated section LLM invoke — loads tenant config server-side."""
+"""Platform-mediated section LLM invoke — loads tenant config server-side.
+
+When ``CIVILAI_AGENT_ASYNC`` / ``CIVILAI_LLM_ASYNC`` is enabled (UAT behind API
+Gateway's ~29s cap), POST creates a job, self-invokes the Lambda as a worker,
+and returns immediately so the FE can poll ``GET …/llm/invoke/{job_id}``.
+"""
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 from typing import Any
 
 from civilai_platform.llm_defaults import BASE_GUARDRAILS
 from civilai_platform.model_presets import resolve_model_id
+from civilai_platform.models.api import LlmInvokeJobResponse
+from civilai_platform.models.entities import (
+    LlmInvokeJob,
+    LlmInvokeJobStatus,
+    new_id,
+    utc_now,
+)
 from civilai_platform.services import llm_config as llm_config_svc
 from civilai_platform.services.audit import record_audit
 from civilai_platform.services.data_proxy import DataProxyClient
 from civilai_platform.services.search_policy import resolve_chat_prompts, resolve_search_run_policy
 from civilai_platform.store.base import PlatformStore
+
+logger = logging.getLogger(__name__)
+
+
+def _truthy_env(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes"}
+
+
+def llm_invoke_async_enabled() -> bool:
+    """Reuse agent async flag when LLM-specific override is unset (UAT already sets it)."""
+    explicit = os.getenv("CIVILAI_LLM_ASYNC", "").strip()
+    if explicit:
+        return explicit.lower() in {"1", "true", "yes"}
+    return _truthy_env("CIVILAI_AGENT_ASYNC", "0")
 
 
 def _snake_guardrails(raw: dict[str, Any]) -> dict[str, Any]:
@@ -129,7 +158,94 @@ def _resolve_system_prompt(
     return str(tenant_cfg.get("sectionSystemPrompt") or legacy_section_prompt or "")
 
 
-def invoke_tenant_section_llm(
+def job_to_response(job: LlmInvokeJob) -> LlmInvokeJobResponse:
+    return LlmInvokeJobResponse(
+        async_=True,
+        job_id=job.job_id,
+        status=job.status.value,
+        step_key=job.step_key,
+        result=job.result,
+        error=job.error,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        completed_at=job.completed_at,
+    )
+
+
+def _execute_job(
+    store: PlatformStore,
+    job: LlmInvokeJob,
+    *,
+    client: DataProxyClient | None = None,
+) -> LlmInvokeJob:
+    try:
+        result = invoke_tenant_section_llm_sync(
+            store,
+            tenant_id=job.tenant_id,
+            actor_user_id=job.actor_user_id,
+            step_key=job.step_key,
+            user_prompt=job.user_prompt,
+            field_context=job.field_context,
+            search_context_hint=job.search_context_hint,
+            invoke_mode=job.invoke_mode,
+            web_search_enabled=job.web_search_enabled,
+            client=client,
+        )
+        now = utc_now()
+        job.status = LlmInvokeJobStatus.SUCCEEDED
+        job.result = result
+        job.error = None
+        job.updated_at = now
+        job.completed_at = now
+    except Exception as exc:
+        logger.exception("llm invoke job %s failed", job.job_id)
+        now = utc_now()
+        job.status = LlmInvokeJobStatus.FAILED
+        job.result = None
+        job.error = str(exc)
+        job.updated_at = now
+        job.completed_at = now
+    store.put_llm_invoke_job(job)
+    return job
+
+
+def _enqueue_async_completion(*, tenant_id: str, job_id: str) -> None:
+    """Fire-and-forget self-invoke so API Gateway can return before Bedrock finishes."""
+    import boto3
+
+    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    if not function_name:
+        raise RuntimeError("AWS_LAMBDA_FUNCTION_NAME unset; cannot enqueue async LLM invoke")
+
+    payload = {
+        "civilai_async": "complete_llm_invoke",
+        "tenant_id": tenant_id,
+        "job_id": job_id,
+    }
+    boto3.client("lambda").invoke(
+        FunctionName=function_name,
+        InvocationType="Event",
+        Payload=json.dumps(payload).encode("utf-8"),
+    )
+
+
+def complete_llm_invoke_from_event(store: PlatformStore, event: dict[str, Any]) -> LlmInvokeJob | None:
+    """Worker entrypoint for async Lambda self-invoke events."""
+    tenant_id = str(event.get("tenant_id") or "")
+    job_id = str(event.get("job_id") or "")
+    if not (tenant_id and job_id):
+        logger.error("complete_llm_invoke event missing ids: %s", event)
+        return None
+    job = store.get_llm_invoke_job(tenant_id, job_id)
+    if not job:
+        logger.error("complete_llm_invoke missing job %s/%s", tenant_id, job_id)
+        return None
+    if job.status in {LlmInvokeJobStatus.SUCCEEDED, LlmInvokeJobStatus.FAILED}:
+        return job
+    return _execute_job(store, job)
+
+
+def invoke_tenant_section_llm_sync(
     store: PlatformStore,
     *,
     tenant_id: str,
@@ -207,3 +323,69 @@ def invoke_tenant_section_llm(
         resource_id=step_key,
     )
     return result
+
+
+def start_tenant_llm_invoke(
+    store: PlatformStore,
+    *,
+    tenant_id: str,
+    actor_user_id: str,
+    step_key: str,
+    user_prompt: str,
+    field_context: dict[str, str],
+    search_context_hint: str = "",
+    invoke_mode: str = "section",
+    web_search_enabled: bool | None = None,
+    client: DataProxyClient | None = None,
+) -> dict[str, Any] | LlmInvokeJobResponse:
+    """Sync: return LLM payload. Async: enqueue job and return pollable envelope."""
+    if not llm_invoke_async_enabled():
+        return invoke_tenant_section_llm_sync(
+            store,
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            step_key=step_key,
+            user_prompt=user_prompt,
+            field_context=field_context,
+            search_context_hint=search_context_hint,
+            invoke_mode=invoke_mode,
+            web_search_enabled=web_search_enabled,
+            client=client,
+        )
+
+    now = utc_now()
+    job = LlmInvokeJob(
+        job_id=new_id(),
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+        step_key=step_key,
+        status=LlmInvokeJobStatus.RUNNING,
+        user_prompt=user_prompt,
+        field_context=field_context,
+        search_context_hint=search_context_hint,
+        invoke_mode=invoke_mode,
+        web_search_enabled=web_search_enabled,
+        created_at=now,
+        updated_at=now,
+    )
+    store.put_llm_invoke_job(job)
+
+    try:
+        _enqueue_async_completion(tenant_id=tenant_id, job_id=job.job_id)
+        return job_to_response(job)
+    except Exception:
+        logger.exception("async LLM enqueue failed; falling back to sync execution")
+        return job_to_response(_execute_job(store, job, client=client))
+
+
+# Back-compat alias for tests/imports that called the old sync-only entrypoint.
+invoke_tenant_section_llm = invoke_tenant_section_llm_sync
+
+
+def get_llm_invoke_job(
+    store: PlatformStore,
+    *,
+    tenant_id: str,
+    job_id: str,
+) -> LlmInvokeJob | None:
+    return store.get_llm_invoke_job(tenant_id, job_id)

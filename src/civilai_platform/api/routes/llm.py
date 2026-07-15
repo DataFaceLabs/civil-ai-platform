@@ -12,6 +12,7 @@ from civilai_platform.auth.context import AuthContext
 from civilai_platform.models.api import (
     LlmConfigResponse,
     LlmConfigUpdate,
+    LlmInvokeJobResponse,
     LogoPresignRequest,
     LogoPresignResponse,
     TenantLlmInvokeRequest,
@@ -109,11 +110,11 @@ def invoke_tenant_llm(
     body: TenantLlmInvokeRequest,
     ctx: Annotated[AuthContext, Depends(platform_admin_tenant_ctx)],
     store: Annotated[PlatformStore, Depends(get_store_dep)],
-) -> dict[str, Any]:
+) -> dict[str, Any] | LlmInvokeJobResponse:
     assert ctx.tenant_id
     actor_id = tenant_actor_user_id(store, ctx)
     try:
-        return llm_invoke_svc.invoke_tenant_section_llm(
+        return llm_invoke_svc.start_tenant_llm_invoke(
             store,
             tenant_id=ctx.tenant_id,
             actor_user_id=actor_id,
@@ -126,6 +127,23 @@ def invoke_tenant_llm(
         )
     except Exception as exc:
         raise HTTPException(502, f"LLM invoke failed: {exc}") from exc
+
+
+@router.get("/v1/tenant/llm/invoke/{job_id}", response_model=LlmInvokeJobResponse)
+def get_tenant_llm_invoke_job(
+    job_id: str,
+    ctx: Annotated[AuthContext, Depends(platform_admin_tenant_ctx)],
+    store: Annotated[PlatformStore, Depends(get_store_dep)],
+) -> LlmInvokeJobResponse:
+    assert ctx.tenant_id
+    job = llm_invoke_svc.get_llm_invoke_job(
+        store,
+        tenant_id=ctx.tenant_id,
+        job_id=job_id,
+    )
+    if not job:
+        raise HTTPException(404, "LLM invoke job not found")
+    return llm_invoke_svc.job_to_response(job)
 
 
 @router.post("/v1/tenant/logo", response_model=LogoPresignResponse)

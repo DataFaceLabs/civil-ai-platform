@@ -10,6 +10,7 @@ from civilai_platform.models.entities import (
     AuditEvent,
     Client,
     LlmBaselineTemplate,
+    LlmInvokeJob,
     Project,
     ProjectActivity,
     ProjectState,
@@ -30,6 +31,7 @@ from civilai_platform.store.keys import (
     gsi2_sk_audit,
     llm_baseline_pk,
     llm_baseline_sk,
+    llm_invoke_job_sk,
     membership_sk,
     profile_sk,
     project_activity_prefix,
@@ -479,3 +481,17 @@ class DynamoDBStore(PlatformStore):
         )
         runs = [AgentRun.model_validate(json.loads(i["payload"])) for i in resp.get("Items", [])]
         return [r for r in runs if r.project_id == project_id]
+
+    def put_llm_invoke_job(self, job: LlmInvokeJob) -> None:
+        self._put(
+            tenant_pk(job.tenant_id),
+            llm_invoke_job_sk(job.job_id),
+            "LlmInvokeJob",
+            job.model_dump(),
+        )
+
+    def get_llm_invoke_job(self, tenant_id: str, job_id: str) -> LlmInvokeJob | None:
+        item = self._get(tenant_pk(tenant_id), llm_invoke_job_sk(job_id))
+        if not item:
+            return None
+        return LlmInvokeJob.model_validate(json.loads(item["payload"]))
