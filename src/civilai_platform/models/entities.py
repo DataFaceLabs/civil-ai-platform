@@ -46,6 +46,12 @@ class AgentRunStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class LlmInvokeJobStatus(StrEnum):
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 ROLE_RANK: dict[Role, int] = {
     Role.PLATFORM_ADMIN: 100,
     Role.ADMIN: 80,
@@ -297,6 +303,27 @@ class AgentRun(BaseModel):
     guardrail_warnings: list[str] = Field(default_factory=list)
     error: str | None = None
     s3_prefix: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+
+class LlmInvokeJob(BaseModel):
+    """Async tenant LLM invoke (API Gateway ~29s cap — draft assembly routinely exceeds it)."""
+
+    job_id: str
+    tenant_id: str
+    actor_user_id: str
+    step_key: str
+    status: LlmInvokeJobStatus = LlmInvokeJobStatus.RUNNING
+    # Request fields needed to re-run invoke_tenant_section_llm in the worker.
+    user_prompt: str
+    field_context: dict[str, str] = Field(default_factory=dict)
+    search_context_hint: str = ""
+    invoke_mode: str = "section"
+    web_search_enabled: bool | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None = None

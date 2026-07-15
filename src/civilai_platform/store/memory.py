@@ -5,6 +5,7 @@ from civilai_platform.models.entities import (
     AuditEvent,
     Client,
     LlmBaselineTemplate,
+    LlmInvokeJob,
     Project,
     ProjectActivity,
     ProjectState,
@@ -28,6 +29,7 @@ class MemoryStore(PlatformStore):
         self._audit: list[AuditEvent] = []
         self._platform_admins: set[str] = set()
         self._agent_runs: dict[tuple[str, str, str], AgentRun] = {}
+        self._llm_invoke_jobs: dict[tuple[str, str], LlmInvokeJob] = {}
         self._slug_index: dict[str, str] = {}
         self._llm_baseline: LlmBaselineTemplate | None = None
         self._tenant_llm: dict[str, TenantLlmConfig] = {}
@@ -71,6 +73,11 @@ class MemoryStore(PlatformStore):
         self._agent_runs = {
             key: run
             for key, run in self._agent_runs.items()
+            if key[0] != tenant_id
+        }
+        self._llm_invoke_jobs = {
+            key: job
+            for key, job in self._llm_invoke_jobs.items()
             if key[0] != tenant_id
         }
         self._audit = [event for event in self._audit if event.tenant_id != tenant_id]
@@ -213,3 +220,9 @@ class MemoryStore(PlatformStore):
         ]
         runs.sort(key=lambda r: r.created_at, reverse=True)
         return runs[:limit]
+
+    def put_llm_invoke_job(self, job: LlmInvokeJob) -> None:
+        self._llm_invoke_jobs[(job.tenant_id, job.job_id)] = job
+
+    def get_llm_invoke_job(self, tenant_id: str, job_id: str) -> LlmInvokeJob | None:
+        return self._llm_invoke_jobs.get((tenant_id, job_id))
