@@ -14,6 +14,7 @@ from civilai_platform.models.entities import (
     MapExhibit,
     MembershipStatus,
     Project,
+    ProjectActivity,
     ProjectState,
     Role,
     Section,
@@ -282,6 +283,48 @@ class ProjectResponse(BaseModel):
     @classmethod
     def from_entity(cls, p: Project) -> "ProjectResponse":
         return cls(**p.model_dump())
+
+
+class ProjectActivityCreate(BaseModel):
+    event_id: str | None = None
+    event_type: Literal[
+        "note_added",
+        "document_added",
+        "document_removed",
+        "source_added",
+        "source_removed",
+        "source_updated",
+        "section_fields_updated",
+    ]
+    section_id: str | None = None
+    content: str = Field(min_length=1, max_length=20000)
+    mentions: list[str] = Field(default_factory=list)
+    detail: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class ProjectActivityUpdate(BaseModel):
+    content: str = Field(min_length=1, max_length=20000)
+    mentions: list[str] = Field(default_factory=list)
+
+
+class ProjectActivityResponse(BaseModel):
+    event_id: str
+    tenant_id: str
+    project_id: str
+    actor_user_id: str
+    actor_name: str
+    event_type: str
+    section_id: str | None
+    content: str
+    mentions: list[str]
+    detail: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_entity(cls, event: ProjectActivity) -> "ProjectActivityResponse":
+        return cls.model_validate(event.model_dump())
 
 
 class ProjectStatePatch(BaseModel):

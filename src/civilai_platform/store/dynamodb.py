@@ -11,6 +11,7 @@ from civilai_platform.models.entities import (
     Client,
     LlmBaselineTemplate,
     Project,
+    ProjectActivity,
     ProjectState,
     Tenant,
     TenantLlmConfig,
@@ -19,7 +20,6 @@ from civilai_platform.models.entities import (
 )
 from civilai_platform.settings import get_settings
 from civilai_platform.store.base import PlatformStore
-from civilai_platform.store.tenant_payload import collect_known_slugs, ensure_url_slug
 from civilai_platform.store.keys import (
     ENTITY_TYPE,
     agent_run_sk,
@@ -32,6 +32,8 @@ from civilai_platform.store.keys import (
     llm_baseline_sk,
     membership_sk,
     profile_sk,
+    project_activity_prefix,
+    project_activity_sk,
     project_sk,
     slug_meta_sk,
     slug_pk,
@@ -41,6 +43,7 @@ from civilai_platform.store.keys import (
     tenant_pk,
     user_pk,
 )
+from civilai_platform.store.tenant_payload import collect_known_slugs, ensure_url_slug
 
 
 def _serialize(obj: Any) -> Any:
@@ -349,6 +352,15 @@ class DynamoDBStore(PlatformStore):
     def delete_project(self, tenant_id: str, project_id: str) -> None:
         self._delete(tenant_pk(tenant_id), project_sk(project_id))
         self._delete(tenant_pk(tenant_id), state_sk(project_id))
+        items = self._query_items(
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :prefix)",
+            ExpressionAttributeValues={
+                ":pk": tenant_pk(tenant_id),
+                ":prefix": project_activity_prefix(project_id),
+            },
+        )
+        for item in items:
+            self._delete(tenant_pk(tenant_id), item["SK"])
 
     def put_project_state(self, state: ProjectState) -> None:
         self._put(
@@ -363,6 +375,41 @@ class DynamoDBStore(PlatformStore):
         if not item:
             return None
         return ProjectState.model_validate(json.loads(item["payload"]))
+
+    def put_project_activity(self, event: ProjectActivity) -> None:
+        self._put(
+            tenant_pk(event.tenant_id),
+            project_activity_sk(event.project_id, event.event_id),
+            "ProjectActivity",
+            event.model_dump(),
+        )
+
+    def get_project_activity(
+        self, tenant_id: str, project_id: str, event_id: str
+    ) -> ProjectActivity | None:
+        item = self._get(tenant_pk(tenant_id), project_activity_sk(project_id, event_id))
+        if not item:
+            return None
+        return ProjectActivity.model_validate(json.loads(item["payload"]))
+
+    def list_project_activity(
+        self, tenant_id: str, project_id: str, limit: int = 200
+    ) -> list[ProjectActivity]:
+        items = self._query_items(
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :prefix)",
+            ExpressionAttributeValues={
+                ":pk": tenant_pk(tenant_id),
+                ":prefix": project_activity_prefix(project_id),
+            },
+        )
+        events = [
+            ProjectActivity.model_validate(json.loads(item["payload"])) for item in items
+        ]
+        events.sort(key=lambda event: (event.created_at, event.event_id), reverse=True)
+        return events[:limit]
+
+    def delete_project_activity(self, tenant_id: str, project_id: str, event_id: str) -> None:
+        self._delete(tenant_pk(tenant_id), project_activity_sk(project_id, event_id))
 
     def put_audit_event(self, event: AuditEvent) -> None:
         iso = event.created_at.isoformat()

@@ -10,6 +10,9 @@ from civilai_platform.models.api import (
     ArtifactDownloadUrlResponse,
     ArtifactPresignRequest,
     ArtifactPresignResponse,
+    ProjectActivityCreate,
+    ProjectActivityResponse,
+    ProjectActivityUpdate,
     ProjectCreate,
     ProjectResponse,
     ProjectStatePatch,
@@ -19,6 +22,7 @@ from civilai_platform.models.api import (
 from civilai_platform.models.entities import Role
 from civilai_platform.services import artifacts as artifact_svc
 from civilai_platform.services import project as project_svc
+from civilai_platform.services import project_activity as activity_svc
 from civilai_platform.store.base import PlatformStore
 
 router = APIRouter(prefix="/v1/projects", tags=["projects"])
@@ -111,6 +115,101 @@ def delete_project(
         )
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/{project_id}/activity", response_model=list[ProjectActivityResponse])
+def list_project_activity(
+    project_id: str,
+    ctx: Annotated[AuthContext, Depends(_member_ctx)],
+    store: Annotated[PlatformStore, Depends(get_store_dep)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+) -> list[ProjectActivityResponse]:
+    assert ctx.tenant_id
+    try:
+        return activity_svc.list_project_activity(
+            store,
+            tenant_id=ctx.tenant_id,
+            project_id=project_id,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post(
+    "/{project_id}/activity",
+    response_model=ProjectActivityResponse,
+    status_code=201,
+)
+def create_project_activity(
+    project_id: str,
+    body: ProjectActivityCreate,
+    ctx: Annotated[AuthContext, Depends(_writer_ctx)],
+    store: Annotated[PlatformStore, Depends(get_store_dep)],
+) -> ProjectActivityResponse:
+    assert ctx.tenant_id
+    actor_id = tenant_actor_user_id(store, ctx)
+    try:
+        return activity_svc.create_project_activity(
+            store,
+            tenant_id=ctx.tenant_id,
+            project_id=project_id,
+            actor_user_id=actor_id,
+            data=body,
+        )
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.patch(
+    "/{project_id}/activity/{event_id}",
+    response_model=ProjectActivityResponse,
+)
+def update_project_activity(
+    project_id: str,
+    event_id: str,
+    body: ProjectActivityUpdate,
+    ctx: Annotated[AuthContext, Depends(_writer_ctx)],
+    store: Annotated[PlatformStore, Depends(get_store_dep)],
+) -> ProjectActivityResponse:
+    assert ctx.tenant_id
+    actor_id = tenant_actor_user_id(store, ctx)
+    try:
+        return activity_svc.update_project_activity(
+            store,
+            tenant_id=ctx.tenant_id,
+            project_id=project_id,
+            event_id=event_id,
+            actor_user_id=actor_id,
+            allow_any_actor=ctx.role in {Role.ADMIN, Role.PLATFORM_ADMIN},
+            data=body,
+        )
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+
+
+@router.delete("/{project_id}/activity/{event_id}", status_code=204)
+def delete_project_activity(
+    project_id: str,
+    event_id: str,
+    ctx: Annotated[AuthContext, Depends(_writer_ctx)],
+    store: Annotated[PlatformStore, Depends(get_store_dep)],
+) -> None:
+    assert ctx.tenant_id
+    actor_id = tenant_actor_user_id(store, ctx)
+    try:
+        activity_svc.delete_project_activity(
+            store,
+            tenant_id=ctx.tenant_id,
+            project_id=project_id,
+            event_id=event_id,
+            actor_user_id=actor_id,
+            allow_any_actor=ctx.role in {Role.ADMIN, Role.PLATFORM_ADMIN},
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
 
 
 @router.get("/{project_id}/state", response_model=ProjectStateResponse)

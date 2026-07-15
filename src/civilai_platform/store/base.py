@@ -7,8 +7,8 @@ from civilai_platform.models.entities import (
     Client,
     LlmBaselineTemplate,
     Project,
+    ProjectActivity,
     ProjectState,
-    Role,
     Tenant,
     TenantLlmConfig,
     TenantMembership,
@@ -115,6 +115,23 @@ class PlatformStore(ABC):
 
     @abstractmethod
     def get_project_state(self, tenant_id: str, project_id: str) -> ProjectState | None: ...
+
+    # --- Project activity ---
+    @abstractmethod
+    def put_project_activity(self, event: ProjectActivity) -> None: ...
+
+    @abstractmethod
+    def get_project_activity(
+        self, tenant_id: str, project_id: str, event_id: str
+    ) -> ProjectActivity | None: ...
+
+    @abstractmethod
+    def list_project_activity(
+        self, tenant_id: str, project_id: str, limit: int = 200
+    ) -> list[ProjectActivity]: ...
+
+    @abstractmethod
+    def delete_project_activity(self, tenant_id: str, project_id: str, event_id: str) -> None: ...
 
     # --- Audit ---
     @abstractmethod

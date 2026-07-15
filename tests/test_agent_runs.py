@@ -126,3 +126,16 @@ def test_section_draft_resolves_prompt_lab_config_before_agent(client: TestClien
     assert "MF-4 permits multifamily uses." in body["request"]
     assert "Generate the zoning section draft." not in body["request"]
     assert "Review zoning-related field values" in body["message"]
+    activity = client.get(
+        f"/v1/projects/{project_id}/activity",
+        headers=headers,
+    )
+    assert activity.status_code == 200
+    draft_events = [
+        event
+        for event in activity.json()
+        if event["event_type"] == "section_draft_created"
+    ]
+    assert len(draft_events) == 1
+    assert draft_events[0]["event_id"] == body["run_id"]
+    assert draft_events[0]["section_id"] == "zoning"

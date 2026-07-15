@@ -266,6 +266,21 @@ class AuditEvent(BaseModel):
     created_at: datetime
 
 
+class ProjectActivity(BaseModel):
+    event_id: str
+    tenant_id: str
+    project_id: str
+    actor_user_id: str
+    actor_name: str
+    event_type: str
+    section_id: str | None = None
+    content: str
+    mentions: list[str] = Field(default_factory=list)
+    detail: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
 class AgentRun(BaseModel):
     run_id: str
     tenant_id: str
