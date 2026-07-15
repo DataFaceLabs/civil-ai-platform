@@ -45,18 +45,20 @@ resource "aws_cognito_user_pool" "main" {
   # configured; otherwise fall back to Cognito's built-in sender. SES source_arn is the
   # verified email identity; same-account so no explicit SES sending-authorization policy
   # is needed.
-  dynamic "email_configuration" {
-    for_each = var.ses_from_email == "" ? [] : [1]
-    content {
-      email_sending_account = "DEVELOPER"
-      from_email_address    = var.ses_from_email
-      source_arn = format(
-        "arn:aws:ses:%s:%s:identity/%s",
-        var.aws_region,
-        data.aws_caller_identity.current.account_id,
-        var.ses_from_email,
-      )
-    }
+  #
+  # This block is always emitted (not a conditional `dynamic`): `email_configuration` is a
+  # computed attribute, so *omitting* it makes Terraform leave whatever is live in place
+  # rather than reverting to the default. Emitting COGNITO_DEFAULT explicitly is what lets
+  # an empty `ses_from_email` actually switch the pool back to the built-in sender.
+  email_configuration {
+    email_sending_account = var.ses_from_email == "" ? "COGNITO_DEFAULT" : "DEVELOPER"
+    from_email_address    = var.ses_from_email == "" ? null : var.ses_from_email
+    source_arn = var.ses_from_email == "" ? null : format(
+      "arn:aws:ses:%s:%s:identity/%s",
+      var.aws_region,
+      data.aws_caller_identity.current.account_id,
+      var.ses_from_email,
+    )
   }
 
   password_policy {
