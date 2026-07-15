@@ -1,2 +1,3 @@
 .local/
 infra/dist/
+assets/templates/_spike_output_*.docx
