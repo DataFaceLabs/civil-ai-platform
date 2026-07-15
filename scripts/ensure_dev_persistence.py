@@ -16,13 +16,22 @@ REGION = os.environ.get("AWS_REGION", "us-east-1")
 STORE_BACKEND = os.environ.get("CIVILAI_STORE_BACKEND", "file")
 FILE_STORE_PATH = os.environ.get("CIVILAI_FILE_STORE_PATH", ".local/platform-store")
 DYNAMODB_ENDPOINT = os.environ.get("CIVILAI_DYNAMODB_ENDPOINT_URL") or None
-CORS_ORIGINS = [
+# Localhost defaults for `make api` / FE on Vite. Extra Origins (e.g. UAT FE)
+# can be appended via CIVILAI_CORS_ORIGINS (comma-separated) — S3 merges them
+# into the existing bucket rule so browser→presigned PUTs work from those hosts.
+_DEFAULT_CORS_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",
     "http://localhost:8080",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
 ]
+_EXTRA_CORS_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("CIVILAI_CORS_ORIGINS", "").split(",")
+    if o.strip()
+]
+CORS_ORIGINS = _DEFAULT_CORS_ORIGINS + _EXTRA_CORS_ORIGINS
 
 
 def ensure_file_store() -> None:

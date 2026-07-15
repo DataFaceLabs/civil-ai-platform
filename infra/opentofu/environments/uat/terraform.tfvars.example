@@ -12,9 +12,17 @@ serving_s3_uri = "s3://civilai-data/dev/serving/snapshot_date=2026-07-02/civil_a
 
 mapbox_access_token = "pk...."
 
+# Browser Origin allow-list for data-API CORS *and* S3 presigned uploads.
 cors_origins = [
   "http://localhost:5173",
   "http://localhost:3000",
+  "http://localhost:8080",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:3000",
+  "https://www.civil1.ai",
+  "https://civil1.ai",
+  # Optional Amplify default domain while custom DNS is settling:
+  # "https://develop.d3joxyeudajkza.amplifyapp.com",
 ]
 
 # Add Amplify default domain after first apply, e.g. https://develop.d1234.amplifyapp.com/fstudio/*/login/callback

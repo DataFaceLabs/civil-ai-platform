@@ -62,8 +62,19 @@ variable "mapbox_access_token" {
 }
 
 variable "cors_origins" {
-  type    = list(string)
-  default = ["http://localhost:5173", "http://localhost:3000"]
+  type = list(string)
+  # Used by the data-API EC2 CORSMiddleware *and* S3 bucket CORS for
+  # browser→presigned-URL artifact uploads (exhibits, logos). Must include every
+  # FE Origin that puts directly to s3://civilai-data.
+  default = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    "https://www.civil1.ai",
+    "https://civil1.ai",
+  ]
 }
 
 variable "cognito_callback_urls" {
