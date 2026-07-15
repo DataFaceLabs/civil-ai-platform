@@ -1,5 +1,21 @@
-from civilai_platform.models.api import AdminTenantCreate, TenantCreate, TenantUpdate
-from civilai_platform.models.entities import Role, Tenant, TenantStatus, new_id, utc_now
+from civilai_platform.models.api import (
+    AdminTenantCreate,
+    MeResponse,
+    TenantCreate,
+    TenantMembershipSummary,
+    TenantResponse,
+    TenantUpdate,
+    UserResponse,
+)
+from civilai_platform.models.entities import (
+    MembershipStatus,
+    Role,
+    Tenant,
+    TenantStatus,
+    UserProfile,
+    new_id,
+    utc_now,
+)
 from civilai_platform.services import llm_config as llm_config_svc
 from civilai_platform.services.audit import record_audit
 from civilai_platform.store.base import PlatformStore
@@ -36,9 +52,8 @@ def create_tenant_with_admin(
     data: AdminTenantCreate,
     *,
     actor_user_id: str,
-) -> tuple[Tenant, "UserResponse"]:
-    from civilai_platform.models.api import UserCreate, UserResponse
-    from civilai_platform.models.entities import Role
+) -> tuple[Tenant, UserResponse]:
+    from civilai_platform.models.api import UserCreate
     from civilai_platform.services import user as user_svc
 
     tenant = create_tenant(store, data)
@@ -87,12 +102,9 @@ def update_tenant(store: PlatformStore, tenant_id: str, data: TenantUpdate) -> T
     return updated
 
 
-from civilai_platform.models.api import MeResponse, TenantMembershipSummary, TenantResponse
-from civilai_platform.models.entities import MembershipStatus, UserProfile
-
-
 def get_me(store: PlatformStore, user_id: str) -> MeResponse:
     from civilai_platform.services import platform_tenant as platform_tenant_svc
+    from civilai_platform.services import user as user_svc
 
     profile = store.get_user_profile(user_id)
     if not profile:
@@ -104,6 +116,8 @@ def get_me(store: PlatformStore, user_id: str) -> MeResponse:
             created_at=utc_now(),
             updated_at=utc_now(),
         )
+    # First successful Cognito login after invite: promote INVITED → ACTIVE.
+    user_svc.activate_invited_memberships(store, user_id)
     is_platform_admin = platform_tenant_svc.is_platform_admin_user(store, user_id)
     if is_platform_admin:
         platform_tenant_svc.ensure_platform_admin_membership(store, user_id)

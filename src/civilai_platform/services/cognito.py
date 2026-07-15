@@ -1,6 +1,37 @@
 """Cognito user provisioning — no-op in dev when pool is not configured."""
 
+from __future__ import annotations
+
+import secrets
+import string
+
 from civilai_platform.settings import get_settings
+
+
+def generate_temporary_password(*, length: int = 16) -> str:
+    """Generate a Cognito-compatible temporary password.
+
+    Policy (UAT pool): min 10, upper, lower, number; symbols not required.
+    Avoid ambiguous punctuation so admins can read/copy it reliably.
+    """
+    if length < 10:
+        raise ValueError("temporary password length must be >= 10")
+    alphabet = string.ascii_letters + string.digits
+    while True:
+        chars = [
+            secrets.choice(string.ascii_uppercase),
+            secrets.choice(string.ascii_lowercase),
+            secrets.choice(string.digits),
+            *[secrets.choice(alphabet) for _ in range(length - 3)],
+        ]
+        secrets.SystemRandom().shuffle(chars)
+        password = "".join(chars)
+        if (
+            any(c.isupper() for c in password)
+            and any(c.islower() for c in password)
+            and any(c.isdigit() for c in password)
+        ):
+            return password
 
 
 class CognitoProvisioner:
@@ -21,11 +52,17 @@ class CognitoProvisioner:
         last_name: str,
         password: str | None = None,
         invite: bool = True,
-    ) -> str | None:
-        """Create Cognito user when pool is configured; return Cognito sub or None."""
+    ) -> tuple[str | None, str | None]:
+        """Create Cognito user when pool is configured.
+
+        Returns ``(cognito_sub_or_username, temporary_password)``.
+        ``temporary_password`` is the one-time password Cognito will accept on
+        first login (FORCE_CHANGE_PASSWORD). Callers should surface it to the
+        inviting admin when email delivery may fail (e.g. SES sandbox).
+        """
         if not self._client or not self._pool_id:
-            return None
-        temp_password = password or "ChangeMe-123!"
+            return None, None
+        temp_password = password or generate_temporary_password()
         params: dict = {
             "UserPoolId": self._pool_id,
             "Username": email,
@@ -38,14 +75,30 @@ class CognitoProvisioner:
             "TemporaryPassword": temp_password,
         }
         if invite and not password:
+            # Still attempt Cognito invite email (works for SES-verified recipients
+            # while the account remains in the SES sandbox).
             params["DesiredDeliveryMediums"] = ["EMAIL"]
         else:
             params["MessageAction"] = "SUPPRESS"
         resp = self._client.admin_create_user(**params)
         for attr in resp["User"].get("Attributes", []):
             if attr["Name"] == "sub":
-                return attr["Value"]
-        return resp["User"]["Username"]
+                return attr["Value"], temp_password
+        return resp["User"]["Username"], temp_password
+
+    def resend_invite(self, *, email: str, temporary_password: str | None = None) -> str:
+        """Resend the Cognito invitation email with a (new) temporary password."""
+        if not self._client or not self._pool_id:
+            raise RuntimeError("Cognito user pool is not configured")
+        temp_password = temporary_password or generate_temporary_password()
+        self._client.admin_create_user(
+            UserPoolId=self._pool_id,
+            Username=email,
+            MessageAction="RESEND",
+            TemporaryPassword=temp_password,
+            DesiredDeliveryMediums=["EMAIL"],
+        )
+        return temp_password
 
     def disable_user(self, *, email: str) -> None:
         if not self._client or not self._pool_id:
