@@ -1,4 +1,12 @@
-from civilai_platform.models.api import UserCreate, UserResponse, UserUpdate, PlatformAdminResponse, PlatformAdminCreate, PlatformAdminUpdate, AdminUserRowResponse
+from civilai_platform.models.api import (
+    AdminUserRowResponse,
+    PlatformAdminCreate,
+    PlatformAdminResponse,
+    PlatformAdminUpdate,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+)
 from civilai_platform.models.entities import (
     MembershipStatus,
     Role,
@@ -7,9 +15,9 @@ from civilai_platform.models.entities import (
     new_id,
     utc_now,
 )
+from civilai_platform.services import platform_tenant as platform_tenant_svc
 from civilai_platform.services.audit import record_audit
 from civilai_platform.services.cognito import get_cognito_provisioner
-from civilai_platform.services import platform_tenant as platform_tenant_svc
 from civilai_platform.store.base import PlatformStore
 
 
@@ -36,6 +44,7 @@ def create_user(
     actor_user_id: str,
     data: UserCreate,
 ) -> UserResponse:
+    temporary_password: str | None = None
     existing_profile = _profile_by_email(store, data.email)
     if existing_profile:
         _assert_single_tenant_membership(store, existing_profile.user_id, tenant_id)
@@ -45,7 +54,7 @@ def create_user(
         user_id = existing_profile.user_id
         profile = existing_profile
     else:
-        cognito_sub = get_cognito_provisioner().provision_user(
+        cognito_sub, temporary_password = get_cognito_provisioner().provision_user(
             email=data.email,
             first_name=data.first_name,
             last_name=data.last_name,
@@ -66,7 +75,9 @@ def create_user(
         store.put_user_profile(profile)
 
     now = utc_now()
-    status = MembershipStatus.INVITED if data.invite and not data.password else MembershipStatus.ACTIVE
+    status = (
+        MembershipStatus.INVITED if data.invite and not data.password else MembershipStatus.ACTIVE
+    )
     membership = TenantMembership(
         tenant_id=tenant_id,
         user_id=user_id,
@@ -82,7 +93,7 @@ def create_user(
         resource_type="user",
         resource_id=user_id,
     )
-    return _to_response(profile, membership)
+    return _to_response(profile, membership, temporary_password=temporary_password)
 
 
 def update_user(
@@ -98,7 +109,9 @@ def update_user(
     if not profile or not membership:
         raise ValueError("User not found")
     if data.first_name is not None:
-        profile = profile.model_copy(update={"first_name": data.first_name, "updated_at": utc_now()})
+        profile = profile.model_copy(
+            update={"first_name": data.first_name, "updated_at": utc_now()}
+        )
     if data.last_name is not None:
         profile = profile.model_copy(update={"last_name": data.last_name, "updated_at": utc_now()})
     if data.phone is not None:
@@ -227,8 +240,12 @@ def list_all_users_for_admin(
                 role=membership.role if membership else Role.PLATFORM_ADMIN,
                 status=membership.status if membership else MembershipStatus.ACTIVE,
                 tenant_id=tenant_id,
-                tenant_name=platform_tenant.name if platform_tenant else platform_tenant_svc.PLATFORM_TENANT_NAME,
-                tenant_slug=platform_tenant.url_slug if platform_tenant else platform_tenant_svc.PLATFORM_TENANT_SLUG,
+                tenant_name=platform_tenant.name
+                if platform_tenant
+                else platform_tenant_svc.PLATFORM_TENANT_NAME,
+                tenant_slug=platform_tenant.url_slug
+                if platform_tenant
+                else platform_tenant_svc.PLATFORM_TENANT_SLUG,
                 is_platform_admin=True,
                 joined_at=membership.joined_at if membership else profile.created_at,
             )
@@ -258,12 +275,13 @@ def create_platform_admin(
     actor_user_id: str,
     data: PlatformAdminCreate,
 ) -> PlatformAdminResponse:
+    temporary_password: str | None = None
     existing = _profile_by_email(store, data.email)
     if existing:
         user_id = existing.user_id
         profile = existing
     else:
-        cognito_sub = get_cognito_provisioner().provision_user(
+        cognito_sub, temporary_password = get_cognito_provisioner().provision_user(
             email=data.email,
             first_name=data.first_name,
             last_name=data.last_name,
@@ -305,6 +323,7 @@ def create_platform_admin(
         first_name=profile.first_name,
         last_name=profile.last_name,
         phone=profile.phone,
+        temporary_password=temporary_password,
     )
 
 
@@ -387,13 +406,9 @@ def delete_platform_admin(
     Delete must still clean that up so Admin UI can remove orphaned rows.
     """
     platform = platform_tenant_svc.get_platform_tenant(store)
-    membership = (
-        store.get_membership(platform.tenant_id, user_id) if platform else None
-    )
+    membership = store.get_membership(platform.tenant_id, user_id) if platform else None
     is_admin = store.is_platform_admin(user_id)
-    is_disabled_former = bool(
-        membership and membership.status == MembershipStatus.DISABLED
-    )
+    is_disabled_former = bool(membership and membership.status == MembershipStatus.DISABLED)
     if not is_admin and not is_disabled_former:
         return
     store.set_platform_admin(user_id, False)
@@ -425,13 +440,16 @@ def is_dev_user_id(user_id: str) -> bool:
 
 
 def activate_invited_memberships(store: PlatformStore, user_id: str) -> None:
-    """Dev login: treat invited users as active so bootstrap can attach a session."""
+    """Mark invited memberships active after a successful Cognito-authenticated session.
+
+    Invite creates Cognito users in FORCE_CHANGE_PASSWORD and platform memberships as
+    INVITED. After the user signs in (and changes their temp password), /v1/me must
+    activate those memberships or the user appears to have no tenants.
+    """
     for membership in store.list_memberships_for_user(user_id):
         if membership.status != MembershipStatus.INVITED:
             continue
-        store.put_membership(
-            membership.model_copy(update={"status": MembershipStatus.ACTIVE})
-        )
+        store.put_membership(membership.model_copy(update={"status": MembershipStatus.ACTIVE}))
 
 
 def _profile_by_email(store: PlatformStore, email: str) -> UserProfile | None:
@@ -460,7 +478,12 @@ def _profile_by_email(store: PlatformStore, email: str) -> UserProfile | None:
     return canonical[0] if canonical else matches[0]
 
 
-def _to_response(profile: UserProfile, membership: TenantMembership) -> UserResponse:
+def _to_response(
+    profile: UserProfile,
+    membership: TenantMembership,
+    *,
+    temporary_password: str | None = None,
+) -> UserResponse:
     return UserResponse(
         user_id=profile.user_id,
         email=profile.email,
@@ -470,4 +493,5 @@ def _to_response(profile: UserProfile, membership: TenantMembership) -> UserResp
         role=membership.role,
         status=membership.status,
         joined_at=membership.joined_at,
+        temporary_password=temporary_password,
     )

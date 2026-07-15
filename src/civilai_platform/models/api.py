@@ -142,6 +142,8 @@ class PlatformAdminResponse(BaseModel):
     first_name: str
     last_name: str
     phone: str | None = None
+    # One-time Cognito temporary password; only set on create when Cognito provisioned.
+    temporary_password: str | None = None
 
 
 class PlatformAdminCreate(BaseModel):
@@ -218,6 +220,9 @@ class UserResponse(BaseModel):
     role: Role
     status: MembershipStatus
     joined_at: datetime
+    # One-time Cognito temporary password; only set on create when Cognito provisioned.
+    # Admins must copy it when SES invite email is not delivered (sandbox / bounce).
+    temporary_password: str | None = None
 
 
 class MeResponse(BaseModel):
