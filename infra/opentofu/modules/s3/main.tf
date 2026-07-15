@@ -2,6 +2,12 @@ variable "environment" {
   type = string
 }
 
+variable "cors_origins" {
+  type        = list(string)
+  description = "Browser Origins allowed to PUT/GET via S3 presigned URLs."
+  default     = []
+}
+
 locals {
   bucket_name = "civilai-app-${var.environment}"
 }
@@ -60,6 +66,19 @@ resource "aws_s3_bucket_lifecycle_configuration" "app" {
     noncurrent_version_expiration {
       noncurrent_days = 30
     }
+  }
+}
+
+resource "aws_s3_bucket_cors_configuration" "app" {
+  count  = length(var.cors_origins) > 0 ? 1 : 0
+  bucket = aws_s3_bucket.app.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["GET", "PUT", "HEAD"]
+    allowed_origins = var.cors_origins
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3600
   }
 }
 

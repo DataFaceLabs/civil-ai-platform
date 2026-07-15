@@ -17,6 +17,8 @@ OpenTofu manages **all** UAT AWS resources for the product stack:
 | `modules/agentcore` | Agent runtime IAM attachments |
 
 **Existing data lake** (`s3://civilai-data`) is referenced via data source — not recreated.
+UAT also applies **S3 CORS** on that bucket for browser→presigned artifact uploads
+(`var.cors_origins`, including `https://www.civil1.ai`).
 
 ## Prerequisites
 

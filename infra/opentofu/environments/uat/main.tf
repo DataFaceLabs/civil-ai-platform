@@ -28,6 +28,22 @@ data "aws_s3_bucket" "data_lake" {
   bucket = var.data_lake_bucket
 }
 
+# Browser PUTs of exhibits/logos use S3 presigned URLs against this bucket, so
+# the browser Origin (www.civil1.ai) must be allowed here — API Gateway CORS
+# does not cover the S3 host. Without this, uploads fail with:
+#   No 'Access-Control-Allow-Origin' header is present on the requested resource.
+resource "aws_s3_bucket_cors_configuration" "data_lake" {
+  bucket = data.aws_s3_bucket.data_lake.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["GET", "PUT", "HEAD"]
+    allowed_origins = var.cors_origins
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3600
+  }
+}
+
 module "secrets" {
   source = "../../modules/secrets"
 
@@ -63,6 +79,7 @@ module "s3_app" {
   count  = var.create_platform_persistence ? 1 : 0
   source = "../../modules/s3"
   environment = var.environment
+  cors_origins = var.cors_origins
 }
 
 module "s3_agent_corpus" {
