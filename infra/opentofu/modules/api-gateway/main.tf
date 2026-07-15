@@ -132,6 +132,7 @@ data "aws_iam_policy_document" "lambda" {
     effect = "Allow"
     actions = [
       "cognito-idp:AdminCreateUser",
+      "cognito-idp:AdminDeleteUser",
       "cognito-idp:AdminDisableUser",
       "cognito-idp:AdminGetUser",
     ]
