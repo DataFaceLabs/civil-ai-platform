@@ -70,12 +70,15 @@ def create_user(
         if data.invite and not data.password:
             # Cognito account is typically disabled after tenant delete — re-enable
             # and rotate the temporary password so the invite is usable.
-            _, temporary_password = get_cognito_provisioner().reinvite_existing_user(
-                email=data.email,
-                first_name=data.first_name,
-                last_name=data.last_name,
-                send_email=True,
-            )
+            try:
+                _, temporary_password = get_cognito_provisioner().reinvite_existing_user(
+                    email=data.email,
+                    first_name=data.first_name,
+                    last_name=data.last_name,
+                    send_email=True,
+                )
+            except CognitoProvisionError as exc:
+                raise UserConflictError(str(exc)) from exc
     else:
         try:
             cognito_sub, temporary_password = get_cognito_provisioner().provision_user(
