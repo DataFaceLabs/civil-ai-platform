@@ -134,7 +134,10 @@ data "aws_iam_policy_document" "lambda" {
       "cognito-idp:AdminCreateUser",
       "cognito-idp:AdminDeleteUser",
       "cognito-idp:AdminDisableUser",
+      "cognito-idp:AdminEnableUser",
       "cognito-idp:AdminGetUser",
+      "cognito-idp:AdminSetUserPassword",
+      "cognito-idp:AdminUpdateUserAttributes",
     ]
     resources = [var.cognito_user_pool_arn]
   }
@@ -199,9 +202,10 @@ resource "aws_lambda_function" "platform" {
   # aarch64-manylinux2014 -- must match, or compiled extensions fail to import at cold
   # start ("No module named 'pydantic_core._pydantic_core'") since the default here is x86_64.
   architectures = ["arm64"]
-  # Sync API Gateway requests must return in <=29s. Live Strands runs enqueue an
-  # async self-invoke (CIVILAI_AGENT_ASYNC=true) that needs a longer worker window.
-  timeout       = 300
+  # Sync API Gateway requests must return in <=29s. Agent-runs and async tenant LLM
+  # invoke enqueue Lambda Event workers (CIVILAI_AGENT_ASYNC=true). Draft LLM upstream
+  # timeout is ~660s — worker needs Lambda max headroom (900s).
+  timeout       = 900
   memory_size   = 1024
 
   filename         = var.lambda_package_path
@@ -226,6 +230,9 @@ resource "aws_lambda_function" "platform" {
       # Lambda Event self-invoke (API Gateway ~29s sync cap). Also read as
       # CIVILAI_LLM_ASYNC default by llm_invoke.llm_invoke_async_enabled().
       CIVILAI_AGENT_ASYNC = "true"
+      # Section drafts use the deterministic fetch/dispatch/render pipeline instead of
+      # the legacy multi-turn Strands tool loop (keeps facts section-scoped, lower tokens).
+      CIVILAI_DRAFT_PIPELINE = "1"
       # API Gateway's own cors_configuration below already scopes allow_origins to "*" at
       # the edge; matching it here (rather than the app's localhost-only default) is what
       # lets FastAPI's CORSMiddleware answer the OPTIONS preflight route (see
