@@ -95,9 +95,15 @@ def _section_config(step_key: str) -> dict[str, Any]:
                     "source URL and cite only sources returned by the search. If a fact is not "
                     "in the field values or the search results, state that it is unverified "
                     "rather than inferring it.\n\n"
+                    "Never state a specific fire code edition (e.g. \"2021 IFC\") unless the "
+                    "IFC edition field below has a value. If it is empty, say the current fire "
+                    "code adoption should be confirmed with the fire protection district -- do "
+                    "not guess an edition from the jurisdiction or fire district name alone.\n\n"
                     "Water: {{field.WATER_SERVICE}}\n"
                     "Wastewater: {{field.WASTEWATER_SERVICE}}\n"
                     "Electric provider: {{field.ELECTRIC_PROVIDER}}\n"
+                    "Fire protection: {{field.FIRE_PROTECTION}}\n"
+                    "IFC edition: {{field.IFC_EDITION}}\n"
                     "Governing jurisdiction: {{field.GOVERNING_JURIS}}\n"
                     "Property: {{field.PROPERTY_ADDRESS}}"
                 ),
@@ -106,6 +112,7 @@ def _section_config(step_key: str) -> dict[str, Any]:
                     "WASTEWATER_SERVICE",
                     "ELECTRIC_PROVIDER",
                     "FIRE_PROTECTION",
+                    "IFC_EDITION",
                     "OSSF_REQUIREMENTS",
                     "GOVERNING_JURIS",
                     "PROPERTY_ADDRESS",
