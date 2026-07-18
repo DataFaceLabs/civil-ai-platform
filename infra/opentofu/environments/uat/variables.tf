@@ -20,8 +20,14 @@ variable "allowed_api_cidr_blocks" {
 }
 
 variable "serving_s3_uri" {
-  type    = string
-  default = "s3://civilai-data/dev/serving/snapshot_date=2026-07-02/civil_ai_serving.duckdb"
+  type = string
+  # MUST track s3://civilai-data/dev/serving/current.json (the published pointer). A stale
+  # value here is a silent data revert: deploy/entrypoint.sh only fetches when /data is
+  # EMPTY, so a running box keeps whatever it has, but a REPLACED instance boots from this
+  # URI. This default sat at snapshot_date=2026-07-02 while current.json pointed at
+  # 2026-07-15e -- an instance replacement would have silently rolled back the D7/D8/D10/D11
+  # data fixes (incl. D8's *_ft/*_pct column renames, which the serving code now expects).
+  default = "s3://civilai-data/dev/serving/snapshot_date=2026-07-15e/civil_ai_serving.duckdb"
 }
 
 variable "data_lake_bucket" {
@@ -94,8 +100,8 @@ variable "data_api_only" {
 }
 
 variable "create_platform_persistence" {
-  type    = bool
-  default = false
+  type        = bool
+  default     = false
   description = "DynamoDB + S3 app bucket + Cognito + Bedrock IAM (for hosted platform)."
 }
 
