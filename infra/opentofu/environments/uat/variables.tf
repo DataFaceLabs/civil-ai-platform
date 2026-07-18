@@ -51,8 +51,12 @@ variable "data_api_github_repo_url" {
 }
 
 variable "data_api_git_ref" {
-  type    = string
-  default = "develop"
+  type = string
+  # Same replacement-time hazard as serving_s3_uri above: a REPLACED instance clones
+  # civil-ai-data from this ref at boot. Post release-migration (RELEASE-MIGRATION-PLAN.md),
+  # the customer-facing backend builds from `main` -- leaving this at develop meant a
+  # rebuilt box would silently run unreleased code while deploy-uat.sh deploys main.
+  default = "main"
 }
 
 variable "github_token_parameter_name" {
