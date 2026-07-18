@@ -49,7 +49,7 @@ variable "mapbox_public_token" {
 
 variable "develop_basic_auth_username" {
   type    = string
-  default = "civilai-team"
+  default = "civil1ai-team"
 }
 
 variable "develop_basic_auth_password" {
