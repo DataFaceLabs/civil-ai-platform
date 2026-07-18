@@ -20,8 +20,14 @@ variable "allowed_api_cidr_blocks" {
 }
 
 variable "serving_s3_uri" {
-  type    = string
-  default = "s3://civilai-data/dev/serving/snapshot_date=2026-07-02/civil_ai_serving.duckdb"
+  type = string
+  # MUST track s3://civilai-data/dev/serving/current.json (the published pointer). A stale
+  # value here is a silent data revert: deploy/entrypoint.sh only fetches when /data is
+  # EMPTY, so a running box keeps whatever it has, but a REPLACED instance boots from this
+  # URI. This default sat at snapshot_date=2026-07-02 while current.json pointed at
+  # 2026-07-15e -- an instance replacement would have silently rolled back the D7/D8/D10/D11
+  # data fixes (incl. D8's *_ft/*_pct column renames, which the serving code now expects).
+  default = "s3://civilai-data/dev/serving/snapshot_date=2026-07-15e/civil_ai_serving.duckdb"
 }
 
 variable "data_lake_bucket" {
@@ -45,8 +51,12 @@ variable "data_api_github_repo_url" {
 }
 
 variable "data_api_git_ref" {
-  type    = string
-  default = "develop"
+  type = string
+  # Same replacement-time hazard as serving_s3_uri above: a REPLACED instance clones
+  # civil-ai-data from this ref at boot. Post release-migration (RELEASE-MIGRATION-PLAN.md),
+  # the customer-facing backend builds from `main` -- leaving this at develop meant a
+  # rebuilt box would silently run unreleased code while deploy-uat.sh deploys main.
+  default = "main"
 }
 
 variable "github_token_parameter_name" {
@@ -94,8 +104,8 @@ variable "data_api_only" {
 }
 
 variable "create_platform_persistence" {
-  type    = bool
-  default = false
+  type        = bool
+  default     = false
   description = "DynamoDB + S3 app bucket + Cognito + Bedrock IAM (for hosted platform)."
 }
 
@@ -135,6 +145,12 @@ variable "fe_github_repository_url" {
 variable "fe_branch_name" {
   type    = string
   default = "develop"
+}
+
+variable "fe_production_branch_name" {
+  type        = string
+  default     = ""
+  description = "Optional second Amplify branch for the release migration (RELEASE-MIGRATION-PLAN.md). Empty skips it; set to \"main\" in Phase 2 to stand it up alongside fe_branch_name."
 }
 
 variable "github_access_token" {

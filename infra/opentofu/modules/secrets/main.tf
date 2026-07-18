@@ -56,6 +56,27 @@ output "mapbox_parameter_name" {
   value = length(aws_ssm_parameter.mapbox_access_token) > 0 ? aws_ssm_parameter.mapbox_access_token[0].name : ""
 }
 
+resource "random_password" "develop_basic_auth" {
+  length  = 24
+  special = false
+}
+
+resource "aws_ssm_parameter" "develop_basic_auth" {
+  name  = "/civilai/${var.environment}/develop-basic-auth-password"
+  type  = "SecureString"
+  value = random_password.develop_basic_auth.result
+
+  tags = {
+    Environment = var.environment
+    Service     = "frontend"
+  }
+}
+
+output "develop_basic_auth_password" {
+  value     = random_password.develop_basic_auth.result
+  sensitive = true
+}
+
 resource "aws_ssm_parameter" "github_access_token" {
   count = var.github_access_token != "" ? 1 : 0
   name  = "/civilai/${var.environment}/github-token"
