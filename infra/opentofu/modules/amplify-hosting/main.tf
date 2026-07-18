@@ -18,6 +18,12 @@ variable "branch_name" {
   default = "develop"
 }
 
+variable "production_branch_name" {
+  type        = string
+  default     = ""
+  description = "Optional second Amplify branch (e.g. \"main\") built alongside branch_name, for the dev/prod release split. Empty string skips it entirely -- inert for any caller that hasn't opted in."
+}
+
 variable "platform_api_base" {
   type = string
 }
@@ -113,6 +119,21 @@ resource "aws_amplify_branch" "main" {
   stage     = var.environment == "prod" ? "PRODUCTION" : "DEVELOPMENT"
 }
 
+# Release migration (RELEASE-MIGRATION-PLAN.md, Phase 2): a second branch on the same app,
+# built from the same app-level config/env vars as branch_name -- so it is byte-identical
+# in every way that matters except which git branch it tracks. This is what lets the custom
+# domain later point at "main" (deliberate releases) while branch_name ("develop") stays the
+# team's continuous test space, with zero config drift between them.
+resource "aws_amplify_branch" "production" {
+  count       = var.production_branch_name != "" ? 1 : 0
+  app_id      = aws_amplify_app.fe.id
+  branch_name = var.production_branch_name
+
+  enable_auto_build = true
+  framework         = "Web Compute"
+  stage             = "PRODUCTION"
+}
+
 output "app_id" {
   value = aws_amplify_app.fe.id
 }
@@ -123,4 +144,8 @@ output "default_domain" {
 
 output "branch_url" {
   value = "https://${var.branch_name}.${aws_amplify_app.fe.default_domain}"
+}
+
+output "production_branch_url" {
+  value = var.production_branch_name != "" ? "https://${var.production_branch_name}.${aws_amplify_app.fe.default_domain}" : null
 }
