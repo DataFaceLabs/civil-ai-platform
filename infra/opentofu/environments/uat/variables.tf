@@ -137,6 +137,12 @@ variable "fe_branch_name" {
   default = "develop"
 }
 
+variable "fe_production_branch_name" {
+  type        = string
+  default     = ""
+  description = "Optional second Amplify branch for the release migration (RELEASE-MIGRATION-PLAN.md). Empty skips it; set to \"main\" in Phase 2 to stand it up alongside fe_branch_name."
+}
+
 variable "github_access_token" {
   type        = string
   sensitive   = true
