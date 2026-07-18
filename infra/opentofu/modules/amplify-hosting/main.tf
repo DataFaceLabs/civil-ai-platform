@@ -48,7 +48,11 @@ variable "mapbox_public_token" {
 }
 
 locals {
-  name = "civilai-fe-${var.environment}"
+  # Fixed product name, not per-environment: since the release migration this one app
+  # hosts two branches (branch_name = the team's test space, production_branch_name =
+  # deliberate releases), so a suffix tied to a single environment no longer fits either.
+  # The Environment tag below still identifies which tofu environment owns the app.
+  name = "civilai-fe"
 }
 
 resource "aws_amplify_app" "fe" {
