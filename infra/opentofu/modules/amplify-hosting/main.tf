@@ -47,6 +47,18 @@ variable "mapbox_public_token" {
   default   = ""
 }
 
+variable "develop_basic_auth_username" {
+  type    = string
+  default = "civilai-team"
+}
+
+variable "develop_basic_auth_password" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "HTTP Basic Auth password gating the branch_name (team test space) URL -- an outer, network-level gate in front of Cognito, so an unauthenticated visitor can't reach any page (including the real login screen) without it. Empty string leaves the branch open, matching prior behavior."
+}
+
 locals {
   # Fixed product name, not per-environment: since the release migration this one app
   # hosts two branches (branch_name = the team's test space, production_branch_name =
@@ -121,6 +133,14 @@ resource "aws_amplify_branch" "main" {
   # WEB_COMPUTE platform + the build artifact's deploy-manifest.json.
   framework = "Web Compute"
   stage     = var.environment == "prod" ? "PRODUCTION" : "DEVELOPMENT"
+
+  # Release migration Phase 4: gate the team test-space branch behind HTTP Basic Auth, an
+  # outer network-level gate in front of Cognito -- unlike production_branch_name below,
+  # which never gets this (it's the real product, reached through civil1.ai).
+  enable_basic_auth = var.develop_basic_auth_password != ""
+  basic_auth_credentials = var.develop_basic_auth_password != "" ? base64encode(
+    "${var.develop_basic_auth_username}:${var.develop_basic_auth_password}"
+  ) : null
 }
 
 # Release migration (RELEASE-MIGRATION-PLAN.md, Phase 2): a second branch on the same app,
