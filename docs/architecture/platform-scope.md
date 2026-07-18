@@ -3,7 +3,7 @@
 `civil-ai-platform` is the application control plane for Civil AI.
 
 It owns the services that make the frontend usable for real customers: identity,
-authorization, projects, sessions, sharing, artifact storage, audit, and agent
+authorization, tenants, clients, projects, sessions, sharing, artifact storage, audit, and agent
 orchestration.
 
 The canonical cross-repo AWS architecture plan lives in the `civil-ai` meta repo:
