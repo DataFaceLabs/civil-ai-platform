@@ -30,7 +30,6 @@ from pathlib import Path
 
 import docx
 from docx.document import Document as DocumentType
-from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
@@ -265,10 +264,17 @@ def build_cover(document: DocumentType) -> None:
     firm_run.font.color.rgb = ACCENT
     accent_rule(document)
 
-    for _ in range(5):
+    for _ in range(2):
         para(document)
     para(document, "FEASIBILITY STUDY", style="Title")
-    para(document, "{{ project_name }}", style="Subtitle")
+    # When project_name == property_address, cover_project_name is blank (context).
+    cover_name = document.add_paragraph()
+    cover_name.paragraph_format.space_after = Pt(0)
+    cover_name.add_run("{%p if cover_project_name %}")
+    para(document, "{{ cover_project_name }}", style="Subtitle")
+    cover_name_end = document.add_paragraph()
+    cover_name_end.paragraph_format.space_after = Pt(0)
+    cover_name_end.add_run("{%p endif %}")
     para(document, "{{ property_address }}", style="Subtitle")
     accent_rule(document)
     para(document)
@@ -283,7 +289,7 @@ def build_cover(document: DocumentType) -> None:
         ],
     )
 
-    for _ in range(5):
+    for _ in range(2):
         para(document)
     para(document, "{{ firm_address }} · {{ firm_location }}").runs[0].font.color.rgb = CAPTION
     para(document, "{{ firm_phone }}").runs[0].font.color.rgb = CAPTION
@@ -314,18 +320,62 @@ def build_exec_summary(document: DocumentType) -> None:
     )
     heading(document, "Priority Recommendations", 2)
     for index in range(1, 6):
+        # Omit unfilled slots entirely (context leaves them empty, not the missing sentinel).
+        start = document.add_paragraph()
+        start.paragraph_format.space_after = Pt(0)
+        start.add_run(f"{{%p if recommendation_{index} %}}")
         item = document.add_paragraph(style="List Number")
         item.add_run(f"{{{{ recommendation_{index} }}}}")
+        end = document.add_paragraph()
+        end.paragraph_format.space_after = Pt(0)
+        end.add_run("{%p endif %}")
     document.add_page_break()
 
 
 def build_toc(document: DocumentType) -> None:
+    """Static Contents — Word TOC fields do not expand under LibreOffice PDF convert."""
     heading(document, "Contents", 1)
-    toc = document.add_paragraph()
-    _field(toc, 'TOC \\o "1-2" \\h \\z \\u')
-    caption = para(document, "Update fields in Word (Ctrl+A, F9) to refresh the table of contents.")
-    caption.runs[0].font.size = Pt(8)
-    caption.runs[0].font.color.rgb = CAPTION
+    for line in (
+        "1 Purpose & Scope",
+        "2 Property",
+        "    2.1 Site Overview",
+        "    2.2 Property Identification",
+        "    2.3 Adjacent Sites & Context",
+        "3 Entitlements & Administration",
+        "    3.1 Zoning & Land Use",
+        "    3.2 Platting & Subdivision",
+        "    3.3 Compatibility & Design Standards",
+        "    3.4 Governing Jurisdictions",
+        "    3.5 Required Permits",
+        "    3.6 Permitting Contacts",
+        "    3.7 Development Agreements",
+        "    3.8 Easements & Setbacks",
+        "    3.9 Surveys, Title & Other Documents",
+        "4 Site Constraints",
+        "    4.1 Watershed & Waterways",
+        "    4.2 Impervious Cover",
+        "    4.3 Soils, Elevation & Topography",
+        "    4.4 Floodplain Status",
+        "    4.5 Drainage Areas & Design Criteria",
+        "    4.6 Water Quality & Detention",
+        "    4.7 Environmental Overlays",
+        "5 Utilities, Access & Mobility",
+        "    5.1 Water Service",
+        "    5.2 Wastewater Service",
+        "    5.3 Electric Service",
+        "    5.4 Fire Protection",
+        "    5.5 Utility Capacity",
+        "    5.6 Right-of-Way",
+        "    5.7 Transportation & Access",
+        "6 Feasibility Determination",
+        "Exhibits",
+    ):
+        entry = para(document, line)
+        entry.paragraph_format.space_after = Pt(2)
+        entry.paragraph_format.space_before = Pt(0)
+        for run in entry.runs:
+            run.font.size = Pt(10)
+            run.font.name = BODY_FONT
     document.add_page_break()
 
 
@@ -446,8 +496,14 @@ def build_body(document: DocumentType) -> None:
         "first, then required studies, optimizations, and permits to initiate.",
     )
     for index in range(1, 6):
+        start = document.add_paragraph()
+        start.paragraph_format.space_after = Pt(0)
+        start.add_run(f"{{%p if recommendation_{index} %}}")
         item = document.add_paragraph(style="List Number")
         item.add_run(f"{{{{ recommendation_{index} }}}}")
+        end = document.add_paragraph()
+        end.paragraph_format.space_after = Pt(0)
+        end.add_run("{%p endif %}")
 
 
 def build_exhibits(document: DocumentType) -> None:
@@ -457,6 +513,7 @@ def build_exhibits(document: DocumentType) -> None:
         "Exhibits are referenced in first-citation order. Uploaded exhibit sheets follow "
         "this list; generated map sheets are appended as they become available.",
     )
+    # Rows with empty exhibit_N values are removed in polish_export_docx.
     label_value_table(
         document,
         [(f"EXHIBIT {index}", f"{{{{ exhibit_{index} }}}}") for index in range(1, 6)],
@@ -497,7 +554,7 @@ def build(out_path: Path) -> None:
     build_exec_summary(document)
     build_toc(document)
     build_body(document)
-    document.add_section(WD_SECTION.NEW_PAGE)
+    document.add_page_break()
     build_exhibits(document)
     build_footer(document)
 
