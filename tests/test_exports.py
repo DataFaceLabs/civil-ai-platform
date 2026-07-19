@@ -28,6 +28,7 @@ def _dev_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CIVILAI_STORE_BACKEND", "memory")
     monkeypatch.setenv("CIVILAI_ARTIFACT_BACKEND", "memory")
     monkeypatch.delenv("CIVILAI_EXPORT_ASYNC", raising=False)
+    monkeypatch.delenv("CIVILAI_EXPORT_PDF_FUNCTION", raising=False)
     get_store.cache_clear()
 
 
@@ -349,3 +350,71 @@ def test_async_export_returns_running_then_event_completes(
     assert completed is not None
     assert completed.status.value == "succeeded"
     assert completed.docx_s3_key
+    assert completed.pdf_s3_key is None  # PDF converter not wired unless env is set
+
+
+def test_export_invokes_pdf_converter_when_configured(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bootstrap = bootstrap_client_user(client, "export-pdf", name="PDF Firm")
+    tenant_id = bootstrap["memberships"][0]["tenant_id"]
+    headers = {"X-Dev-User-Id": "export-pdf", "X-Tenant-Id": tenant_id}
+    project_id = client.post(
+        "/v1/projects",
+        json={"name": "PDF", "address": "4 Main St"},
+        headers=headers,
+    ).json()["project_id"]
+
+    calls: list[tuple[str, str]] = []
+
+    def _fake_invoke(*, docx_s3_key: str, pdf_s3_key: str) -> None:
+        calls.append((docx_s3_key, pdf_s3_key))
+        artifact_svc.store_artifact_bytes(
+            pdf_s3_key, b"%PDF-1.4 fake", content_type="application/pdf"
+        )
+
+    monkeypatch.setenv("CIVILAI_EXPORT_PDF_FUNCTION", "civilai-uat-export-pdf")
+    monkeypatch.setattr(
+        "civilai_platform.services.export.service.invoke_pdf_converter",
+        _fake_invoke,
+    )
+    job = client.post(
+        f"/v1/projects/{project_id}/exports", json={}, headers=headers
+    ).json()
+    assert job["status"] == "succeeded"
+    assert job["docx_s3_key"].endswith("/study.docx")
+    assert job["pdf_s3_key"].endswith("/study.pdf")
+    assert calls == [(job["docx_s3_key"], job["pdf_s3_key"])]
+
+    downloaded = client.get(
+        f"/v1/projects/{project_id}/artifacts/download",
+        params={"key": job["pdf_s3_key"]},
+        headers=headers,
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content.startswith(b"%PDF")
+
+
+def test_export_fails_when_pdf_converter_errors(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bootstrap = bootstrap_client_user(client, "export-pdf-fail", name="Fail Firm")
+    tenant_id = bootstrap["memberships"][0]["tenant_id"]
+    headers = {"X-Dev-User-Id": "export-pdf-fail", "X-Tenant-Id": tenant_id}
+    project_id = client.post(
+        "/v1/projects",
+        json={"name": "Fail", "address": "5 Main St"},
+        headers=headers,
+    ).json()["project_id"]
+
+    monkeypatch.setenv("CIVILAI_EXPORT_PDF_FUNCTION", "civilai-uat-export-pdf")
+    monkeypatch.setattr(
+        "civilai_platform.services.export.service.invoke_pdf_converter",
+        lambda **_: (_ for _ in ()).throw(RuntimeError("soffice boom")),
+    )
+    job = client.post(
+        f"/v1/projects/{project_id}/exports", json={}, headers=headers
+    ).json()
+    assert job["status"] == "failed"
+    assert "soffice boom" in (job.get("error") or "")
+    assert job.get("pdf_s3_key") is None

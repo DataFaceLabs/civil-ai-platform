@@ -12,6 +12,7 @@ from civilai_platform.services import artifacts as artifact_svc
 from civilai_platform.services.audit import record_audit
 from civilai_platform.services.export.context import build_export_context
 from civilai_platform.services.export.linter import lint_docx
+from civilai_platform.services.export.pdf import invoke_pdf_converter, pdf_converter_function_name
 from civilai_platform.services.export.render import render_docx
 from civilai_platform.services.export.skins import get_skin
 from civilai_platform.store.base import PlatformStore
@@ -37,18 +38,26 @@ def _execute_export(store: PlatformStore, job: ExportJob) -> ExportJob:
         )
         rendered = render_docx(context, skin)
         findings = lint_docx(rendered, skin)
-        key = f"{export_job_s3_prefix(job.tenant_id, job.project_id, job.job_id)}study.docx"
+        prefix = export_job_s3_prefix(job.tenant_id, job.project_id, job.job_id)
+        docx_key = f"{prefix}study.docx"
         artifact_svc.store_artifact_bytes(
-            key,
+            docx_key,
             rendered,
             content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
+        pdf_key: str | None = None
+        if pdf_converter_function_name():
+            # PDF is an X2 acceptance criterion when the converter is wired: fail the job
+            # rather than silently shipping DOCX-only.
+            pdf_key = f"{prefix}study.pdf"
+            invoke_pdf_converter(docx_s3_key=docx_key, pdf_s3_key=pdf_key)
         completed = utc_now()
         job = job.model_copy(
             update={
                 "status": ExportJobStatus.SUCCEEDED,
                 "skin_id": skin.id,
-                "docx_s3_key": key,
+                "docx_s3_key": docx_key,
+                "pdf_s3_key": pdf_key,
                 "findings": findings,
                 "provenance": context.provenance,
                 "updated_at": completed,
@@ -78,6 +87,7 @@ def _execute_export(store: PlatformStore, job: ExportJob) -> ExportJob:
             "project_id": job.project_id,
             "status": job.status.value,
             "skin_id": job.skin_id,
+            "pdf_s3_key": job.pdf_s3_key,
         },
     )
     return job
