@@ -21,13 +21,25 @@ variable "allowed_api_cidr_blocks" {
 
 variable "serving_s3_uri" {
   type = string
-  # MUST track s3://civilai-data/dev/serving/current.json (the published pointer). A stale
+  # MUST track s3://civilai-data/prod/serving/current.json (the published pointer). A stale
   # value here is a silent data revert: deploy/entrypoint.sh only fetches when /data is
   # EMPTY, so a running box keeps whatever it has, but a REPLACED instance boots from this
-  # URI. This default sat at snapshot_date=2026-07-02 while current.json pointed at
-  # 2026-07-15e -- an instance replacement would have silently rolled back the D7/D8/D10/D11
-  # data fixes (incl. D8's *_ft/*_pct column renames, which the serving code now expects).
-  default = "s3://civilai-data/dev/serving/snapshot_date=2026-07-15e/civil_ai_serving.duckdb"
+  # URI. (Earlier incident: this default sat at snapshot_date=2026-07-02 while current.json
+  # pointed at 2026-07-15e -- an instance replacement would have silently rolled back the
+  # D7/D8/D10/D11 data fixes.)
+  #
+  # M0.5 dev/prod split: the customer-facing (uat = prod) container now boots from the
+  # prod/ prefix. Data reaches prod/serving only via scripts/promote_to_prod.sh
+  # (promote_serving_artifact.py) in civil-ai-data.
+  default = "s3://civilai-data/prod/serving/snapshot_date=2026-07-15e/civil_ai_serving.duckdb"
+}
+
+variable "dev_serving_s3_uri" {
+  type = string
+  # Dev data plane (M0.5 asymmetric split): a second container on port 8001 serves this
+  # over S3/httpfs (no local copy). Pointer form (current.json) is deliberate — a fresh
+  # dev publish becomes visible within the runtime's pointer TTL without any redeploy.
+  default = "s3://civilai-data/dev/serving/current.json"
 }
 
 variable "data_lake_bucket" {
@@ -37,7 +49,7 @@ variable "data_lake_bucket" {
 
 variable "data_lake_prefix" {
   type    = string
-  default = "dev"
+  default = "prod"
 }
 
 variable "data_api_instance_type" {

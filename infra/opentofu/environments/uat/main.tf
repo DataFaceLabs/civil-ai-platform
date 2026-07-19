@@ -97,6 +97,7 @@ module "data_api_ec2" {
   allowed_ssh_cidr_blocks    = var.allowed_ssh_cidr_blocks
   allowed_api_cidr_blocks    = var.allowed_api_cidr_blocks
   serving_s3_uri             = var.serving_s3_uri
+  dev_serving_s3_uri         = var.dev_serving_s3_uri
   data_lake_bucket           = var.data_lake_bucket
   data_lake_prefix           = var.data_lake_prefix
   data_service_key_parameter = module.secrets.data_service_key_parameter_name
