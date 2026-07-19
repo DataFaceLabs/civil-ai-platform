@@ -49,5 +49,12 @@ github_access_token = "ghp_..."
 create_platform_http_api = true
 create_amplify_app       = true
 
-# Run ../../scripts/package-lambda.sh before apply when create_platform_http_api=true
+# Production Amplify branch (civil1.ai). Defaults to "main" post release-migration;
+# leaving it out is fine, but NEVER set it to "" on an environment where the branch
+# is live — that plans a destroy of the production frontend.
+fe_production_branch_name = "main"
+
+# Run ../../scripts/package-lambda.sh before apply when create_platform_http_api=true.
+# NOTE: initial creation only. Lambda CODE deploys go through scripts/deploy-lambda.sh;
+# tofu ignores source_code_hash so a stale local zip can't roll back the live API.
 lambda_package_path = "../../../dist/platform-lambda.zip"

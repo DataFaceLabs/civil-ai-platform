@@ -160,9 +160,13 @@ variable "fe_branch_name" {
 }
 
 variable "fe_production_branch_name" {
-  type        = string
-  default     = ""
-  description = "Optional second Amplify branch for the release migration (RELEASE-MIGRATION-PLAN.md). Empty skips it; set to \"main\" in Phase 2 to stand it up alongside fe_branch_name."
+  type = string
+  # Release migration Phase 2 is EXECUTED: the "main" Amplify branch is live and serves
+  # civil1.ai. The previous "" default was a destroy trap — any machine whose local
+  # terraform.tfvars lacked this line planned a destroy of the production branch
+  # (observed 2026-07-19). Empty remains valid only for pre-Phase-2 environments.
+  default     = "main"
+  description = "Second Amplify branch (production releases). \"main\" post release-migration Phase 2; empty only for environments without the release split."
 }
 
 variable "github_access_token" {
