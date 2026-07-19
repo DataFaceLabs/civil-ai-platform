@@ -141,6 +141,17 @@ resource "aws_amplify_branch" "main" {
   basic_auth_credentials = var.develop_basic_auth_password != "" ? base64encode(
     "${var.develop_basic_auth_username}:${var.develop_basic_auth_password}"
   ) : null
+
+  lifecycle {
+    # Provider quirk: the Amplify API never echoes basic_auth_credentials back in a
+    # form that matches what we send, so this attribute re-plans as an in-place
+    # update on EVERY run — even immediately after a successful apply with
+    # -refresh=false (verified 2026-07-19). Live value was converged to the SSM
+    # parameter (/civilai/<env>/develop-basic-auth-password) on that date. To
+    # rotate: change the password source, then run a targeted apply with this
+    # ignore temporarily removed, or `aws amplify update-branch` directly.
+    ignore_changes = [basic_auth_credentials]
+  }
 }
 
 # Release migration (RELEASE-MIGRATION-PLAN.md, Phase 2): a second branch on the same app,
