@@ -254,6 +254,9 @@ resource "aws_lambda_function" "platform" {
       # Lambda Event self-invoke (API Gateway ~29s sync cap). Also read as
       # CIVILAI_LLM_ASYNC default by llm_invoke.llm_invoke_async_enabled().
       CIVILAI_AGENT_ASYNC = "true"
+      # DOCX generation and BYO exhibit composition also run as a Lambda Event worker;
+      # the POST returns a pollable job before API Gateway's synchronous timeout.
+      CIVILAI_EXPORT_ASYNC = "true"
       # Section drafts use the deterministic fetch/dispatch/render pipeline instead of
       # the legacy multi-turn Strands tool loop (keeps facts section-scoped, lower tokens).
       CIVILAI_DRAFT_PIPELINE = "1"

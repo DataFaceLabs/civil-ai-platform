@@ -9,6 +9,7 @@ from civilai_platform.models.entities import (
     AgentRun,
     AuditEvent,
     Client,
+    ExportJob,
     LlmBaselineTemplate,
     LlmInvokeJob,
     Project,
@@ -25,6 +26,7 @@ from civilai_platform.store.keys import (
     ENTITY_TYPE,
     agent_run_sk,
     client_sk,
+    export_job_sk,
     gsi1_pk_user,
     gsi1_sk_tenant,
     gsi2_pk_tenant,
@@ -98,7 +100,9 @@ class DynamoDBStore(PlatformStore):
             items.extend(resp.get("Items", []))
         return items
 
-    def _put(self, pk: str, sk: str, entity_type: str, payload: dict[str, Any], gsi: dict | None = None) -> None:
+    def _put(
+        self, pk: str, sk: str, entity_type: str, payload: dict[str, Any], gsi: dict | None = None
+    ) -> None:
         item: dict[str, Any] = {
             "PK": pk,
             "SK": sk,
@@ -404,9 +408,7 @@ class DynamoDBStore(PlatformStore):
                 ":prefix": project_activity_prefix(project_id),
             },
         )
-        events = [
-            ProjectActivity.model_validate(json.loads(item["payload"])) for item in items
-        ]
+        events = [ProjectActivity.model_validate(json.loads(item["payload"])) for item in items]
         events.sort(key=lambda event: (event.created_at, event.event_id), reverse=True)
         return events[:limit]
 
@@ -437,7 +439,9 @@ class DynamoDBStore(PlatformStore):
             ScanIndexForward=False,
             Limit=limit,
         )
-        events = [AuditEvent.model_validate(json.loads(i["payload"])) for i in resp.get("Items", [])]
+        events = [
+            AuditEvent.model_validate(json.loads(i["payload"])) for i in resp.get("Items", [])
+        ]
         if since:
             events = [e for e in events if e.created_at >= since]
         return events
@@ -481,6 +485,21 @@ class DynamoDBStore(PlatformStore):
         )
         runs = [AgentRun.model_validate(json.loads(i["payload"])) for i in resp.get("Items", [])]
         return [r for r in runs if r.project_id == project_id]
+
+    def put_export_job(self, job: ExportJob) -> None:
+        self._put(
+            tenant_pk(job.tenant_id),
+            export_job_sk(job.job_id),
+            "ExportJob",
+            job.model_dump(),
+        )
+
+    def get_export_job(self, tenant_id: str, project_id: str, job_id: str) -> ExportJob | None:
+        item = self._get(tenant_pk(tenant_id), export_job_sk(job_id))
+        if not item:
+            return None
+        job = ExportJob.model_validate(json.loads(item["payload"]))
+        return job if job.project_id == project_id else None
 
     def put_llm_invoke_job(self, job: LlmInvokeJob) -> None:
         self._put(
