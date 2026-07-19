@@ -267,6 +267,7 @@ class ProjectState(BaseModel):
     client_contacts: list[ClientContact] = Field(default_factory=list)
     client_notes: list[ClientNote] = Field(default_factory=list)
     references: list[dict[str, Any]] = Field(default_factory=list)
+    records_to_pull: dict[str, dict[str, Any]] = Field(default_factory=dict)
     feasibility_document: FeasibilityDocumentRef | None = None
     verification_steps: list[VerificationStep] = Field(default_factory=list)
     updated_at: datetime

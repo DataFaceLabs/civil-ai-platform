@@ -302,6 +302,40 @@ def test_project_state_patch_keeps_nested_models(client: TestClient) -> None:
     assert response.sections[0].fields["PROPERTY_ADDRESS"].value == "13903 FM 812, Austin TX"
 
 
+def test_project_state_round_trips_records_to_pull(client: TestClient) -> None:
+    admin = "records-pull-admin"
+    boot = _bootstrap(client, admin, name="Records Pull Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers(admin, tenant_id)
+
+    project_id = client.post(
+        "/v1/projects",
+        json={"name": "Records Site", "address": "20401 Trappers Trail, Manor TX"},
+        headers=h,
+    ).json()["project_id"]
+
+    patch = client.patch(
+        f"/v1/projects/{project_id}/state",
+        json={
+            "records_to_pull": {
+                "subject-floodpro": {
+                    "pulled_at": "2026-07-19T12:00:00.000Z",
+                    "note": "model downloaded",
+                }
+            }
+        },
+        headers=h,
+    )
+    assert patch.status_code == 200
+    assert patch.json()["records_to_pull"]["subject-floodpro"]["note"] == "model downloaded"
+
+    got = client.get(f"/v1/projects/{project_id}/state", headers=h)
+    assert got.status_code == 200
+    assert got.json()["records_to_pull"]["subject-floodpro"]["pulled_at"] == (
+        "2026-07-19T12:00:00.000Z"
+    )
+
+
 def test_cross_tenant_access_denied(client: TestClient) -> None:
     a = _bootstrap(client, "user-a", name="Firm A")
     b = _bootstrap(client, "user-b", name="Firm B")
