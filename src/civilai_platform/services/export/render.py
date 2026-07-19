@@ -101,6 +101,26 @@ def _customer_logo(template: DocxTemplate, payload: bytes | None) -> Any:
         return ""
 
 
+def _cover_aerial(template: DocxTemplate, exhibits: tuple[MapExhibit, ...]) -> Any:
+    """The cover site image (ACE corpus: every delivered study leads with the parcel
+    aerial). Prefers an exhibit labeled like an aerial/vicinity map, falls back to the
+    first embeddable exhibit, and renders blank when the project has none."""
+    def _score(exhibit: MapExhibit) -> int:
+        label = f"{exhibit.label or ''} {exhibit.name}".lower()
+        return 0 if ("aerial" in label or "vicinity" in label) else 1
+
+    for exhibit in sorted(exhibits, key=_score):
+        image = _exhibit_image(exhibit)
+        if image:
+            try:
+                # Sized so the full ACE cover block (title, preparer, aerial, client
+                # contact) still fits one page -- 5.8" pushed contact lines to page 2.
+                return InlineImage(template, BytesIO(image), width=Inches(5.0))
+            except (ValueError, OSError):
+                continue
+    return ""
+
+
 def render_docx(context: ExportContext, skin: Skin) -> bytes:
     if not skin.template_path.exists():
         raise FileNotFoundError(f"export skin template not found: {skin.template_path}")
@@ -108,6 +128,7 @@ def render_docx(context: ExportContext, skin: Skin) -> bytes:
     template = DocxTemplate(str(skin.template_path))
     render_values: dict[str, Any] = dict(context.template_values)
     render_values["customer_logo"] = _customer_logo(template, context.customer_logo)
+    render_values["cover_aerial"] = _cover_aerial(template, context.exhibits)
     for token in skin.narration_tokens:
         text = context.narration.get(token) or "Not available from current project data."
         render_values[token] = _narration_subdoc(template, text)
