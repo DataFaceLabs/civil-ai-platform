@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
-from civilai_platform.llm_defaults import default_llm_lab_config
+from civilai_platform.llm_defaults import ATX_CIVIL_SEARCH_DOMAINS, default_llm_lab_config
+
+
+def test_web_search_defaults_use_atx_civils_trusted_sources() -> None:
+    domains = default_llm_lab_config()["webSearch"]["allowedDomains"]
+
+    assert domains == ATX_CIVIL_SEARCH_DOMAINS
+    assert "*.*" not in domains
+    assert "*.texas.gov" not in domains
+    assert "traviscad.org" in domains
+    assert "fema.gov" in domains
+    assert "usda.gov" in domains
 
 
 def test_utilities_section_never_states_ifc_edition_on_null() -> None:
