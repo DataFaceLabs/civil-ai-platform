@@ -495,9 +495,9 @@ resource "aws_lambda_function" "export_pdf" {
   function_name = "${local.name_prefix}-export-pdf"
   role          = aws_iam_role.export_pdf[0].arn
   package_type  = "Image"
-  # Placeholder until deploy-export-pdf.sh pushes the LibreOffice image to ECR and
-  # updates this function. Must be arm64 to match the API Lambda.
-  image_uri     = "public.ecr.aws/lambda/python:3.12-arm64"
+  # Real LibreOffice image is pushed by scripts/deploy-export-pdf.sh. Until the first
+  # push, create the function only after :latest exists in ECR (see deploy order in README).
+  image_uri     = "${aws_ecr_repository.export_pdf[0].repository_url}:latest"
   architectures = ["arm64"]
   memory_size   = 3008
   timeout       = 120

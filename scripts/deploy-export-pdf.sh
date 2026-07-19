@@ -35,17 +35,23 @@ docker buildx build \
   "$IMAGE_DIR"
 
 echo "=== update Lambda ${FUNCTION_NAME} → ${ECR_URI}:${TAG} ==="
-aws lambda update-function-code \
-  --profile "$AWS_PROFILE" \
-  --region "$AWS_REGION" \
-  --function-name "$FUNCTION_NAME" \
-  --image-uri "${ECR_URI}:${TAG}" \
-  --query '[FunctionName,LastModified,CodeSha256]' \
-  --output text
+# aws-cli 2.0.x lacks --image-uri; use boto3 for broad compatibility.
+AWS_PROFILE="$AWS_PROFILE" AWS_REGION="$AWS_REGION" FUNCTION_NAME="$FUNCTION_NAME" IMAGE_URI="${ECR_URI}:${TAG}" \
+  python3 - <<'PY'
+import os
+import boto3
 
-aws lambda wait function-updated \
-  --profile "$AWS_PROFILE" \
-  --region "$AWS_REGION" \
-  --function-name "$FUNCTION_NAME"
+client = boto3.Session(
+    profile_name=os.environ["AWS_PROFILE"],
+    region_name=os.environ["AWS_REGION"],
+).client("lambda")
+resp = client.update_function_code(
+    FunctionName=os.environ["FUNCTION_NAME"],
+    ImageUri=os.environ["IMAGE_URI"],
+)
+print(resp["FunctionName"], resp["LastModified"], resp.get("CodeSha256", "")[:16])
+waiter = client.get_waiter("function_updated")
+waiter.wait(FunctionName=os.environ["FUNCTION_NAME"])
+PY
 
 echo "=== deploy-export-pdf complete ==="
