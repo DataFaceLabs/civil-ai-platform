@@ -10,7 +10,9 @@ import docx
 from civilai_platform.services.export.skins import Skin
 
 _OUTLINE_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s")
-_PLACEHOLDER_RE = re.compile(r"\{\{.*?\}\}|\{[A-Z_0-9]+\}|FIRM LOGO", re.IGNORECASE)
+_PLACEHOLDER_RE = re.compile(
+    r"\{\{.*?\}\}|\{[A-Z_0-9]+\}|!\[[^\]]*\]|FIRM LOGO", re.IGNORECASE
+)
 _UUID_RE = re.compile(
     r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
     re.IGNORECASE,

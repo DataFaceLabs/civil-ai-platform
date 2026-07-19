@@ -158,20 +158,23 @@ def build_export_context(
         if re.sub(r"^[•*\-\d.)\s]+", "", line).strip()
     ][:5]
 
+    # Cover identity lines render *blank* when unknown -- ACE's delivered covers simply
+    # omit lines they don't have; printing "Not available..." six times on a cover is a
+    # presentation defect, not honesty (facts in the body keep the explicit missing text).
     values: dict[str, str] = {
         "project_name": project.name,
-        "preparer_name": _pick(fields, "preparer_name"),
+        "preparer_name": _pick(fields, "preparer_name", default=""),
         "firm_name": tenant.name,
-        "firm_address": tenant.address or _MISSING,
-        "firm_location": tenant.location or _MISSING,
-        "firm_phone": tenant.phone or _MISSING,
-        "firm_fax": tenant.fax or _MISSING,
-        "client_name": client.name if client else _MISSING,
-        "client_company": client.name if client else _MISSING,
-        "client_address": client.address if client and client.address else _MISSING,
-        "client_location": client.location if client and client.location else _MISSING,
-        "client_email": contact.email if contact else _MISSING,
-        "client_phone": contact.phone if contact else _MISSING,
+        "firm_address": tenant.address or "",
+        "firm_location": tenant.location or "",
+        "firm_phone": tenant.phone or "",
+        "firm_fax": tenant.fax or "",
+        "client_name": client.name if client else "",
+        "client_company": client.name if client else "",
+        "client_address": client.address if client and client.address else "",
+        "client_location": client.location if client and client.location else "",
+        "client_email": contact.email if contact else "",
+        "client_phone": contact.phone if contact else "",
         "proposed_development": state.proposed_use or _MISSING,
         "report_date": datetime.now(UTC).date().isoformat(),
         "property_address": project.address,

@@ -29,9 +29,12 @@ Usage::
 from __future__ import annotations
 
 import re
+from io import BytesIO
 from pathlib import Path
 
 import docx
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_TEMPLATE = (
@@ -42,10 +45,23 @@ OUTPUT_TEMPLATE = REPO_ROOT / "assets" / "templates" / "atxcivil_v1.docx"
 _TOKEN_RE = re.compile(r"\{([A-Z_0-9]+)\}")
 
 # {TOKEN} instances not handled by the 1:1 substitution below:
-# - "![LOGO/IMAGE]" is a placeholder for a real InlineImage, not a {TOKEN}.
+# - "![LOGO/IMAGE]" is the cover *site aerial* slot (every delivered study in the corpus
+#   has the parcel aerial there) -- rewritten to `{{ cover_aerial }}` and fed an
+#   InlineImage by the renderer.
 # - The identification table (TRACT/PARCEL ID/ADDRESS/DEED DOC. NO./ACRES) has no
 #   tokens in its data row today -- it's populated by hand in every delivered study
 #   seen in the corpus. Wiring it needs a jinja loop over tract rows, deferred to E2.
+#
+# Fidelity pass (2026-07-19): the raw template file ACE shared diverges from their
+# *delivered* reports (client-data/feasibility-studies/*.pdf). The delivered look is the
+# contract, so after token substitution we reshape the cover to match the corpus:
+# banner logo moves off the cover into a small centered running header, cover text is
+# centered, cover titles leave the Heading-1 outline (they broke the linter's
+# heading-sequence check), and fonts pin to the Calisto MT family their PDFs embed
+# (raw template fell back to Arial docDefaults).
+
+BODY_FONT = "Calisto MT"
+HEADER_LOGO_WIDTH = Inches(2.0)
 
 # Tokens the render script feeds a docxtpl Subdoc (real multi-paragraph narration,
 # not a plain string) -- these need docxtpl's paragraph-tag syntax `{{p token }}`,
@@ -68,6 +84,91 @@ SUBDOC_TOKENS = frozenset(
 
 def _jinja_name(token: str) -> str:
     return token.lower()
+
+
+def _delete_paragraph(paragraph: docx.text.paragraph.Paragraph) -> None:
+    element = paragraph._element
+    element.getparent().remove(element)
+
+
+def _set_style_font(document: docx.document.Document, style_name: str, font_name: str) -> None:
+    from docx.oxml.ns import qn
+
+    style = document.styles[style_name]
+    style.font.name = font_name
+    rpr = style.element.get_or_add_rPr()
+    fonts = rpr.find(qn("w:rFonts"))
+    if fonts is None:
+        from docx.oxml import OxmlElement
+
+        fonts = OxmlElement("w:rFonts")
+        rpr.append(fonts)
+    for attr in ("w:ascii", "w:hAnsi", "w:cs", "w:eastAsia"):
+        fonts.set(qn(attr), font_name)
+
+
+def fidelity_pass(document: docx.document.Document, logo_bytes: bytes | None) -> None:
+    """Reshape the converted file to match ACE's *delivered* reports, not the raw
+    template skeleton (corpus: client-data/feasibility-studies/*.pdf).
+
+    1. Banner logo: off the cover, into a small centered running header on body pages
+       (cover uses a first-page header with no logo, like every delivered study).
+    2. Cover aerial: the literal "![LOGO/IMAGE]" line becomes `{{ cover_aerial }}`.
+    3. Cover block: centered, and cover titles leave the Heading-1 outline so the
+       linter's heading-sequence check sees only the numbered body outline.
+    4. Fonts: pin Normal + headings to Calisto MT (embedded in their delivered PDFs;
+       the raw template fell back to Arial docDefaults).
+    5. Page break after the client block so the cover stands alone.
+    """
+    if logo_bytes:
+        section = document.sections[0]
+        section.different_first_page_header_footer = True
+        header = section.header
+        header.is_linked_to_previous = False
+        header_paragraph = header.paragraphs[0]
+        header_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        header_paragraph.add_run().add_picture(BytesIO(logo_bytes), width=HEADER_LOGO_WIDTH)
+
+    # Cover banner paragraph is the first paragraph holding an inline drawing.
+    for paragraph in document.paragraphs[:4]:
+        if paragraph._p.xpath(".//w:drawing"):
+            _delete_paragraph(paragraph)
+            break
+
+    body_start = None
+    for index, paragraph in enumerate(document.paragraphs):
+        text = paragraph.text.strip()
+        if text == "FEASIBILITY STUDY FOR":
+            body_start = index
+            break
+    cover_end = body_start if body_start is not None else 10
+
+    for paragraph in document.paragraphs[:cover_end]:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if (paragraph.style.name or "").startswith("Heading"):
+            # Keep the big-title run formatting; just leave the heading outline.
+            paragraph.style = document.styles["Title"]
+        if paragraph.text.strip() == "![LOGO/IMAGE]":
+            for run in paragraph.runs:
+                run.text = ""
+            paragraph.runs[0].text = "{{ cover_aerial }}"
+
+    if body_start is not None:
+        from docx.enum.text import WD_BREAK
+
+        prior = document.paragraphs[body_start - 1]
+        run = prior.add_run()
+        run.add_break(WD_BREAK.PAGE)
+        for paragraph in document.paragraphs[body_start : body_start + 2]:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            if (paragraph.style.name or "").startswith("Heading"):
+                paragraph.style = document.styles["Title"]
+
+    for style_name in ("Normal", "Heading 1", "Heading 2", "Heading 3", "Title"):
+        try:
+            _set_style_font(document, style_name, BODY_FONT)
+        except KeyError:
+            continue
 
 
 def convert(source: Path, dest: Path) -> tuple[int, list[str]]:
@@ -106,6 +207,17 @@ def convert(source: Path, dest: Path) -> tuple[int, list[str]]:
             for cell in row.cells:
                 for paragraph in cell.paragraphs:
                     _convert_runs(paragraph)
+
+    # The template's one embedded image is the ACE banner logo -- reuse it for the header.
+    # (Synthetic test fixtures have no media; the fidelity pass skips the header then.)
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(source) as archive:
+            logo_bytes: bytes | None = archive.read("word/media/image1.png")
+    except KeyError:
+        logo_bytes = None
+    fidelity_pass(document, logo_bytes)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     document.save(str(dest))
