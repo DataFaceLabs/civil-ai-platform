@@ -11,7 +11,7 @@ from typing import Any
 import docx
 from docx.shared import Inches
 from docxcompose.composer import Composer  # type: ignore[import-untyped]
-from docxtpl import DocxTemplate  # type: ignore[import-untyped]
+from docxtpl import DocxTemplate, InlineImage  # type: ignore[import-untyped]
 
 from civilai_platform.models.entities import MapExhibit
 from civilai_platform.services import artifacts as artifact_svc
@@ -89,12 +89,25 @@ def _append_byo_exhibits(rendered: bytes, exhibits: tuple[MapExhibit, ...]) -> b
     return output.getvalue()
 
 
+def _customer_logo(template: DocxTemplate, payload: bytes | None) -> Any:
+    """A cover InlineImage from the tenant's uploaded logo, height-constrained for an
+    elegant lockup. Returns "" when absent or unreadable so the `{{ customer_logo }}`
+    token renders empty (the firm name below carries the brand) instead of leaking."""
+    if not payload:
+        return ""
+    try:
+        return InlineImage(template, BytesIO(payload), height=Inches(0.8))
+    except (ValueError, OSError):
+        return ""
+
+
 def render_docx(context: ExportContext, skin: Skin) -> bytes:
     if not skin.template_path.exists():
         raise FileNotFoundError(f"export skin template not found: {skin.template_path}")
 
     template = DocxTemplate(str(skin.template_path))
     render_values: dict[str, Any] = dict(context.template_values)
+    render_values["customer_logo"] = _customer_logo(template, context.customer_logo)
     for token in skin.narration_tokens:
         text = context.narration.get(token) or "Not available from current project data."
         render_values[token] = _narration_subdoc(template, text)

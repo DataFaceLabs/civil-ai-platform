@@ -14,6 +14,7 @@ from html.parser import HTMLParser
 from typing import Any
 
 from civilai_platform.models.entities import MapExhibit, ProjectState
+from civilai_platform.services import artifacts as artifact_svc
 from civilai_platform.store.base import PlatformStore
 
 _MISSING = "Not available from current project data."
@@ -115,6 +116,9 @@ class ExportContext:
     narration: dict[str, str]
     exhibits: tuple[MapExhibit, ...] = ()
     provenance: dict[str, Any] = field(default_factory=dict)
+    # Raw bytes of the tenant's uploaded cover logo (BRANDING slot). The renderer turns
+    # this into a docxtpl InlineImage; skins without a `customer_logo` token ignore it.
+    customer_logo: bytes | None = None
 
 
 def build_export_context(
@@ -238,10 +242,16 @@ def build_export_context(
         else "prod",
         "generated_at": datetime.now(UTC).isoformat(),
     }
+    customer_logo = (
+        artifact_svc.download_artifact_bytes(tenant.logo_s3_key)
+        if tenant.logo_s3_key
+        else None
+    )
     return ExportContext(
         skin_id=skin_id,
         template_values=values,
         narration=narration,
         exhibits=tuple(state.map_exhibits),
         provenance=provenance,
+        customer_logo=customer_logo,
     )

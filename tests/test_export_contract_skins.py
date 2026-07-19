@@ -54,10 +54,21 @@ def test_get_skin_defaults_and_fails_closed() -> None:
     assert skins.get_skin(None).id == skins.DEFAULT_SKIN_ID
 
 
-def test_unavailable_skin_falls_back_to_default() -> None:
-    # civil1_study_v1 is registered but not renderable until DESIGN lands.
-    assert skins.CIVIL1_STUDY_V1.available is False
-    assert skins.get_skin("civil1_study_v1").id == skins.DEFAULT_SKIN_ID
+def test_civil1_skin_is_available_and_resolvable() -> None:
+    # M1-DESIGN landed: civil1_study_v1 renders as an opt-in Tier-1 skin.
+    assert skins.CIVIL1_STUDY_V1.available is True
+    assert skins.get_skin("civil1_study_v1").id == "civil1_study_v1"
+    # Default stays ATX-faithful until X5 flips it.
+    assert skins.DEFAULT_SKIN_ID == "atxcivil_v1"
+
+
+def test_civil1_skin_metadata() -> None:
+    skin = skins.get_skin("civil1_study_v1")
+    assert skin.tier == 1
+    assert skin.template_path.exists(), "run scripts/build_civil1_skin.py"
+    assert skin.outline[0] == "1" and skin.outline[-1] == "EXHIBITS"
+    # Civil1 fills the same shared narration keys context.py produces.
+    assert skin.narration_tokens == skins.get_skin("atxcivil_v1").narration_tokens
 
 
 def test_atxcivil_skin_metadata() -> None:
