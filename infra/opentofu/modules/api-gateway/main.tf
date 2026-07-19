@@ -47,6 +47,18 @@ variable "data_api_base_url" {
   type = string
 }
 
+variable "dev_data_api_base_url" {
+  type        = string
+  default     = ""
+  description = "Optional dev data plane selected only for exact dev_data_origins."
+}
+
+variable "dev_data_origins" {
+  type        = list(string)
+  default     = []
+  description = "Exact browser Origins permitted to select dev_data_api_base_url."
+}
+
 variable "data_service_key_parameter" {
   type = string
 }
@@ -231,6 +243,8 @@ resource "aws_lambda_function" "platform" {
       CIVILAI_APP_BUCKET            = replace(var.app_bucket_arn, "arn:aws:s3:::", "")
       CIVILAI_AGENT_CORPUS_BUCKET   = var.agent_corpus_bucket
       CIVILAI_DATA_API_BASE         = var.data_api_base_url
+      CIVILAI_DEV_DATA_API_BASE     = var.dev_data_api_base_url
+      CIVILAI_DEV_DATA_ORIGINS      = join(",", var.dev_data_origins)
       CIVILAI_DATA_SERVICE_KEY      = var.data_service_key
       CIVILAI_COGNITO_USER_POOL_ID  = var.cognito_user_pool_id
       CIVILAI_COGNITO_APP_CLIENT_ID = var.cognito_client_id

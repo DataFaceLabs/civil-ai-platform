@@ -18,6 +18,7 @@ from civilai_platform.auth.authz import require_membership
 from civilai_platform.auth.context import AuthContext
 from civilai_platform.models.entities import Role
 from civilai_platform.services.data_proxy import DataProxyClient
+from civilai_platform.services.data_routing import data_api_base_for_request
 
 router = APIRouter(prefix="/v1/data-proxy", tags=["data-proxy"])
 
@@ -33,8 +34,8 @@ def _viewer_ctx(ctx: Annotated[AuthContext, Depends(tenant_ctx)]) -> AuthContext
     return ctx
 
 
-def get_data_proxy() -> DataProxyClient:
-    return DataProxyClient()
+def get_data_proxy(request: Request) -> DataProxyClient:
+    return DataProxyClient(base_url=data_api_base_for_request(request))
 
 
 class ResolveBody(BaseModel):

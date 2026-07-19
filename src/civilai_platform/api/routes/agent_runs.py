@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from civilai_platform.api.deps import get_store_dep, tenant_ctx
 from civilai_platform.auth.authz import require_membership
@@ -10,6 +10,7 @@ from civilai_platform.auth.context import AuthContext
 from civilai_platform.models.api import AgentRunCreate, AgentRunResponse
 from civilai_platform.models.entities import Role
 from civilai_platform.services import agent_run as agent_run_svc
+from civilai_platform.services.data_routing import data_api_base_for_request
 from civilai_platform.store.base import PlatformStore
 
 router = APIRouter(prefix="/v1/projects", tags=["agent-runs"])
@@ -29,6 +30,7 @@ def _viewer_ctx(ctx: Annotated[AuthContext, Depends(tenant_ctx)]) -> AuthContext
 def create_agent_run(
     project_id: str,
     body: AgentRunCreate,
+    request: Request,
     ctx: Annotated[AuthContext, Depends(_analyst_ctx)],
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> AgentRunResponse:
@@ -54,6 +56,7 @@ def create_agent_run(
         user_guidance=body.user_guidance,
         fields_unchanged=body.fields_unchanged,
         actor_role=ctx.role.value if ctx.role else None,
+        data_api_base=data_api_base_for_request(request),
     )
     return AgentRunResponse.from_entity(run)
 

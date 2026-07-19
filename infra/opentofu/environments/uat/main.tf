@@ -123,6 +123,8 @@ module "api_gateway" {
   agent_corpus_bucket        = module.s3_agent_corpus[0].bucket_name
   agent_corpus_bucket_arn    = module.s3_agent_corpus[0].bucket_arn
   data_api_base_url          = module.data_api_ec2.data_api_base_url_http
+  dev_data_api_base_url      = module.data_api_ec2.dev_data_api_base_url_http
+  dev_data_origins           = var.dev_data_origins
   data_service_key_parameter = module.secrets.data_service_key_parameter_name
   data_service_key           = module.secrets.data_service_key
   create_http_api            = true
