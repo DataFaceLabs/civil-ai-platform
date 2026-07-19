@@ -99,6 +99,14 @@ variable "cors_origins" {
   ]
 }
 
+variable "dev_data_origins" {
+  type        = list(string)
+  description = "Exact frontend Origins routed to the dev data API; all others fail closed to prod."
+  default = [
+    "https://develop.d3joxyeudajkza.amplifyapp.com",
+  ]
+}
+
 variable "cognito_callback_urls" {
   type    = list(string)
   default = ["http://localhost:5173/fstudio/*/login/callback"]

@@ -517,6 +517,8 @@ def test_tenant_llm_invoke_async_job_and_poll(
 ) -> None:
     """When async is on, POST returns a job; worker completion is pollable via GET."""
     monkeypatch.setenv("CIVILAI_LLM_ASYNC", "true")
+    monkeypatch.setenv("CIVILAI_DEV_DATA_API_BASE", "http://dev-data.test:8001")
+    monkeypatch.setenv("CIVILAI_DEV_DATA_ORIGINS", "https://develop.example.com")
     boot = _bootstrap(client, "async-invoke-user", name="Async Invoke Firm")
     tenant_id = boot["memberships"][0]["tenant_id"]
     h = _headers("async-invoke-user", tenant_id)
@@ -526,8 +528,14 @@ def test_tenant_llm_invoke_async_job_and_poll(
 
     enqueued: list[dict] = []
 
-    def _fake_enqueue(*, tenant_id: str, job_id: str) -> None:
-        enqueued.append({"tenant_id": tenant_id, "job_id": job_id})
+    def _fake_enqueue(*, tenant_id: str, job_id: str, data_api_base: str | None) -> None:
+        enqueued.append(
+            {
+                "tenant_id": tenant_id,
+                "job_id": job_id,
+                "data_api_base": data_api_base,
+            }
+        )
 
     monkeypatch.setattr(
         "civilai_platform.services.llm_invoke._enqueue_async_completion",
@@ -540,7 +548,7 @@ def test_tenant_llm_invoke_async_job_and_poll(
             "user_prompt": "Polish merged sections.",
             "field_context": {"PROPERTY_ADDRESS": "123 Main St"},
         },
-        headers=h,
+        headers={**h, "Origin": "https://develop.example.com"},
     )
     assert res.status_code == 200
     body = res.json()
@@ -549,9 +557,11 @@ def test_tenant_llm_invoke_async_job_and_poll(
     assert body["job_id"]
     assert body["result"] is None
     assert len(enqueued) == 1
+    assert enqueued[0]["data_api_base"] == "http://dev-data.test:8001"
 
     def _fake_invoke(self, body, *, step_key=None, **_kwargs):  # noqa: ANN001
         assert step_key == "draft"
+        assert self.base_url == "http://dev-data.test:8001"
         return {
             "text": "## Parcel\n\nPolished draft.",
             "model_id": body["model_id"],
@@ -569,7 +579,7 @@ def test_tenant_llm_invoke_async_job_and_poll(
 
     completed = llm_invoke_svc.complete_llm_invoke_from_event(
         store,
-        {"tenant_id": tenant_id, "job_id": body["job_id"]},
+        enqueued[0],
     )
     assert completed is not None
     assert completed.status.value == "succeeded"
