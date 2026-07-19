@@ -93,16 +93,39 @@ ATXCIVIL_V1 = Skin(
     available=True,
 )
 
-# --- civil1_study_v1: the default Civil1 skin — built in M1-DESIGN, shipped in X5 --------
-# Registered now so routing/selection code can reference it; not yet renderable.
+# --- civil1_study_v1: the default Civil1 skin — built by scripts/build_civil1_skin.py ----
+# Renderable as an opt-in Tier-1 skin since M1-DESIGN; becomes DEFAULT_SKIN_ID at X5.
+# Narration tokens match the shared editor-derived narration keys in context.py.
+_CIVIL1_NARRATION_TOKENS = frozenset(
+    {
+        "zoning_regs",
+        "water_service",
+        "wastewater_service",
+        "electric_provider",
+        "fire_protection",
+        "floodplain_status",
+    }
+)
+
+# Civil1's own numbering (format §5 item 7 — skins may renumber; linters key on this
+# per-skin outline). Unnumbered display headings (Executive Summary, Contents) are
+# intentionally outside the outline check.
+_CIVIL1_OUTLINE = (
+    "1", "2", "2.1", "2.2", "2.3",
+    "3", "3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9",
+    "4", "4.1", "4.2", "4.3", "4.4", "4.5", "4.6", "4.7",
+    "5", "5.1", "5.2", "5.3", "5.4", "5.5", "5.6", "5.7",
+    "6", "EXHIBITS",
+)  # fmt: skip
+
 CIVIL1_STUDY_V1 = Skin(
     id="civil1_study_v1",
     display_name="Civil1 Study",
     template_filename="civil1_study_v1.docx",
     tier=1,
-    narration_tokens=frozenset(),
-    outline=(),
-    available=False,
+    narration_tokens=_CIVIL1_NARRATION_TOKENS,
+    outline=_CIVIL1_OUTLINE,
+    available=True,
 )
 
 
