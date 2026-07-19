@@ -8,8 +8,13 @@ allowed_ssh_cidr_blocks = ["YOUR.PUBLIC.IP/32"]
 # Start permissive for UAT smoke; tighten before external testers
 allowed_api_cidr_blocks = ["0.0.0.0/0"]
 
-# Must match the published pointer: s3://civilai-data/dev/serving/current.json
-serving_s3_uri = "s3://civilai-data/dev/serving/snapshot_date=2026-07-15e/civil_ai_serving.duckdb"
+# Prod container (port 8000): MUST track s3://civilai-data/prod/serving/current.json.
+# A replaced instance boots from this URI (entrypoint only fetches when /data is empty).
+serving_s3_uri = "s3://civilai-data/prod/serving/snapshot_date=2026-07-15e/civil_ai_serving.duckdb"
+
+# Dev container (port 8001): DuckDB-over-S3 via the published pointer. Empty = no
+# second container. Pointer form means a fresh publish is visible without redeploy.
+dev_serving_s3_uri = "s3://civilai-data/dev/serving/current.json"
 
 mapbox_access_token = "pk...."
 

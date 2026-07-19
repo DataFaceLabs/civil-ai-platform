@@ -28,7 +28,24 @@ variable "allowed_api_cidr_blocks" {
 
 variable "serving_s3_uri" {
   type        = string
-  description = "S3 URI for the serving DuckDB artifact."
+  description = "S3 URI for the serving DuckDB artifact (prod container; fetched to local disk at boot)."
+}
+
+variable "dev_serving_s3_uri" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    S3 URI (artifact or current.json pointer) for the dev data plane. When set,
+    a second container serves it on port 8001 via DuckDB-over-S3 (httpfs) with a
+    memory cap — no local artifact copy (M0.5 asymmetric dev/prod split).
+    Empty = no dev container.
+  EOT
+}
+
+variable "dev_memory_limit" {
+  type        = string
+  default     = "512MiB"
+  description = "DuckDB memory cap for the dev container so a dev scan cannot evict the prod page cache."
 }
 
 variable "data_lake_bucket" {
@@ -116,8 +133,11 @@ data "aws_iam_policy_document" "ec2" {
       "s3:ListBucket",
     ]
     resources = [
+      # Both env prefixes: the prod container boot-fetches from prod/serving,
+      # the dev container range-reads dev/serving over httpfs (M0.5 split).
       "arn:aws:s3:::${var.data_lake_bucket}",
-      "arn:aws:s3:::${var.data_lake_bucket}/${var.data_lake_prefix}/serving/*",
+      "arn:aws:s3:::${var.data_lake_bucket}/dev/serving/*",
+      "arn:aws:s3:::${var.data_lake_bucket}/prod/serving/*",
     ]
   }
 
@@ -210,6 +230,17 @@ resource "aws_security_group" "data_api" {
     cidr_blocks = var.allowed_api_cidr_blocks
   }
 
+  dynamic "ingress" {
+    for_each = var.dev_serving_s3_uri != "" ? [1] : []
+    content {
+      description = "Dev data API (DuckDB-over-S3 plane)"
+      from_port   = 8001
+      to_port     = 8001
+      protocol    = "tcp"
+      cidr_blocks = var.allowed_api_cidr_blocks
+    }
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -239,6 +270,8 @@ resource "aws_instance" "data_api" {
     environment                = var.environment
     aws_region                 = var.aws_region
     serving_s3_uri             = var.serving_s3_uri
+    dev_serving_s3_uri         = var.dev_serving_s3_uri
+    dev_memory_limit           = var.dev_memory_limit
     data_service_key_parameter = var.data_service_key_parameter
     mapbox_parameter           = var.mapbox_parameter
     cors_origins               = var.cors_origins
@@ -254,7 +287,11 @@ resource "aws_instance" "data_api" {
   }
 
   lifecycle {
-    ignore_changes = [ami]
+    # user_data is boot-only bootstrap. Day-2 changes (second container, env
+    # flips) go through SSM / deploy scripts so a tofu apply cannot replace the
+    # live instance and take civil1.ai offline. ami is ignored for the same
+    # reason (AL2023 AMI churn).
+    ignore_changes = [ami, user_data]
   }
 }
 
@@ -279,6 +316,10 @@ output "public_ip" {
 
 output "data_api_base_url_http" {
   value = "http://${aws_eip.data_api.public_ip}:8000"
+}
+
+output "dev_data_api_base_url_http" {
+  value = var.dev_serving_s3_uri != "" ? "http://${aws_eip.data_api.public_ip}:8001" : null
 }
 
 output "security_group_id" {
