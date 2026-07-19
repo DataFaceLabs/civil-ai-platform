@@ -5,6 +5,7 @@ from civilai_platform.models.entities import (
     AgentRun,
     AuditEvent,
     Client,
+    ExportJob,
     LlmBaselineTemplate,
     LlmInvokeJob,
     Project,
@@ -158,7 +159,16 @@ class PlatformStore(ABC):
     def get_agent_run(self, tenant_id: str, project_id: str, run_id: str) -> AgentRun | None: ...
 
     @abstractmethod
-    def list_agent_runs(self, tenant_id: str, project_id: str, limit: int = 50) -> list[AgentRun]: ...
+    def list_agent_runs(
+        self, tenant_id: str, project_id: str, limit: int = 50
+    ) -> list[AgentRun]: ...
+
+    # --- Export jobs ---
+    @abstractmethod
+    def put_export_job(self, job: ExportJob) -> None: ...
+
+    @abstractmethod
+    def get_export_job(self, tenant_id: str, project_id: str, job_id: str) -> ExportJob | None: ...
 
     # --- LLM invoke jobs (async section/draft invoke) ---
     @abstractmethod

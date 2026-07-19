@@ -87,6 +87,14 @@ def agent_run_s3_prefix(tenant_id: str, project_id: str, run_id: str) -> str:
     return f"tenant/{tenant_id}/project/{project_id}/agent-runs/{run_id}/"
 
 
+def export_job_sk(job_id: str) -> str:
+    return f"EXPORT_JOB#{job_id}"
+
+
+def export_job_s3_prefix(tenant_id: str, project_id: str, job_id: str) -> str:
+    return f"tenant/{tenant_id}/project/{project_id}/exports/{job_id}/"
+
+
 def llm_invoke_job_sk(job_id: str) -> str:
     return f"LLM_INVOKE#{job_id}"
 

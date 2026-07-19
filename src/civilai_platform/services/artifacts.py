@@ -156,6 +156,23 @@ def store_memory_artifact(key: str, data: bytes) -> None:
     _memory_artifacts[key] = data
 
 
+def store_artifact_bytes(key: str, data: bytes, *, content_type: str) -> None:
+    """Persist a generated artifact through the configured backend."""
+    settings = get_settings()
+    if settings.artifact_backend == "memory":
+        store_memory_artifact(key, data)
+        return
+    if settings.artifact_backend == "s3" and settings.app_bucket:
+        _s3_client().put_object(
+            Bucket=settings.app_bucket,
+            Key=key,
+            Body=data,
+            ContentType=content_type,
+        )
+        return
+    raise RuntimeError("artifact backend is not configured")
+
+
 def get_memory_artifact(key: str) -> bytes | None:
     return _memory_artifacts.get(key)
 

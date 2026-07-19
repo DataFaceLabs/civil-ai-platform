@@ -9,6 +9,7 @@ from civilai_platform.models.entities import (
     ClientContact,
     ClientNote,
     ContextDoc,
+    ExportJob,
     FeasibilityDocumentRef,
     FieldValue,
     MapExhibit,
@@ -49,6 +50,7 @@ class TenantUpdate(BaseModel):
     phone: str | None = None
     fax: str | None = None
     logo_s3_key: str | None = None
+    export_skin: str | None = None
     status: TenantStatus | None = None
     feature_flags: dict[str, bool] | None = None
     enabled_data_sources: list[str] | None = None
@@ -63,6 +65,7 @@ class TenantResponse(BaseModel):
     phone: str
     fax: str
     logo_s3_key: str | None
+    export_skin: str | None
     status: TenantStatus
     feature_flags: dict[str, bool]
     enabled_data_sources: list[str]
@@ -444,6 +447,34 @@ class AgentRunResponse(BaseModel):
             updated_at=run.updated_at,
             completed_at=run.completed_at,
         )
+
+
+class ExportCreate(BaseModel):
+    """Optional skin override; absent means the tenant's configured/default skin."""
+
+    skin_id: str | None = None
+
+
+class ExportJobResponse(BaseModel):
+    job_id: str
+    tenant_id: str
+    project_id: str
+    status: str
+    skin_id: str
+    docx_s3_key: str | None
+    pdf_s3_key: str | None
+    findings: list[dict[str, str]]
+    provenance: dict[str, Any]
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None
+
+    @classmethod
+    def from_entity(cls, job: ExportJob) -> "ExportJobResponse":
+        payload = job.model_dump()
+        payload["status"] = job.status.value
+        return cls.model_validate(payload)
 
 
 class ArtifactPresignRequest(BaseModel):
