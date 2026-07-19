@@ -52,6 +52,12 @@ PANEL_HEX = "F2F5F7"
 
 MISSING = "Not available from current project data."
 
+# Civil1 "Powered by" mark is the same for every report, so it is baked into the master
+# at build time (unlike the per-tenant customer logo, which is injected per render). Drop a
+# real brand PNG here and it upgrades from wordmark text to the logo automatically.
+BRANDING_DIR = Path(__file__).resolve().parents[1] / "assets" / "branding"
+CIVIL1_MARK_PNG = BRANDING_DIR / "civil1_mark.png"
+
 
 # ── Low-level helpers ────────────────────────────────────────────────────────────────
 def _set_font(style, name: str) -> None:
@@ -224,24 +230,42 @@ def accent_rule(document: DocumentType) -> None:
 
 
 # ── Document assembly ────────────────────────────────────────────────────────────────
-def build_cover(document: DocumentType) -> None:
-    band = document.add_table(rows=1, cols=1)
-    band.alignment = WD_TABLE_ALIGNMENT.CENTER
-    band.autofit = False
-    _strip_table_borders(band)
-    _cell_margins(band, top=120, bottom=120)
-    cell = band.rows[0].cells[0]
-    cell.width = Inches(6.7)
-    _shade(cell, BAND_HEX)
-    firm = cell.paragraphs[0]
-    run = firm.add_run("{{ firm_name }}")
-    run.font.name = HEADING_FONT
-    run.font.size = Pt(12)
-    run.font.bold = True
-    run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-    firm.paragraph_format.space_after = Pt(0)
+def _civil1_mark(document: DocumentType) -> None:
+    """Discreet 'Powered by Civil1.ai' provenance mark (baked, same for every report)."""
+    mark = document.add_paragraph()
+    mark.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    mark.paragraph_format.space_before = Pt(6)
+    prefix = mark.add_run("Powered by ")
+    prefix.font.name = BODY_FONT
+    prefix.font.size = Pt(8)
+    prefix.font.color.rgb = CAPTION
+    if CIVIL1_MARK_PNG.exists():
+        mark.add_run().add_picture(str(CIVIL1_MARK_PNG), height=Inches(0.16))
+    else:
+        wordmark = mark.add_run("Civil1.ai")
+        wordmark.font.name = HEADING_FONT
+        wordmark.font.size = Pt(8.5)
+        wordmark.font.bold = True
+        wordmark.font.color.rgb = ACCENT
 
-    for _ in range(4):
+
+def build_cover(document: DocumentType) -> None:
+    # Customer brand lockup leads the cover — this is ultimately the customer's report.
+    # `{{ customer_logo }}` is replaced with the tenant's uploaded logo (InlineImage) at
+    # render time, or an empty run when no logo is on file (firm name below carries it).
+    logo = document.add_paragraph()
+    logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    logo.paragraph_format.space_after = Pt(6)
+    logo.add_run("{{ customer_logo }}")
+    firm_name = document.add_paragraph()
+    firm_run = firm_name.add_run("{{ firm_name }}")
+    firm_run.font.name = HEADING_FONT
+    firm_run.font.size = Pt(13)
+    firm_run.font.bold = True
+    firm_run.font.color.rgb = ACCENT
+    accent_rule(document)
+
+    for _ in range(5):
         para(document)
     para(document, "FEASIBILITY STUDY", style="Title")
     para(document, "{{ project_name }}", style="Subtitle")
@@ -259,12 +283,11 @@ def build_cover(document: DocumentType) -> None:
         ],
     )
 
-    for _ in range(6):
+    for _ in range(5):
         para(document)
-    firm_block = para(document, "{{ firm_name }}")
-    firm_block.runs[0].font.bold = True
     para(document, "{{ firm_address }} · {{ firm_location }}").runs[0].font.color.rgb = CAPTION
     para(document, "{{ firm_phone }}").runs[0].font.color.rgb = CAPTION
+    _civil1_mark(document)
     document.add_page_break()
 
 
@@ -456,7 +479,7 @@ def build_footer(document: DocumentType) -> None:
     _field(paragraph, "PAGE")
     _meta(" of ")
     _field(paragraph, "NUMPAGES")
-    _meta(" · Prepared with Civil1")
+    _meta(" · Powered by Civil1.ai")
 
 
 def build(out_path: Path) -> None:

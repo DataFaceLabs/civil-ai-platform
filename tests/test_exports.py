@@ -11,8 +11,10 @@ from fastapi.testclient import TestClient
 
 from civilai_platform.app import create_app
 from civilai_platform.models.entities import MapExhibit
+from civilai_platform.services import artifacts as artifact_svc
 from civilai_platform.services.export import service as export_svc
 from civilai_platform.store import get_store
+from civilai_platform.store.keys import tenant_logo_s3_key
 from tests.conftest import bootstrap_client_user
 
 _PNG = base64.b64decode(
@@ -192,14 +194,76 @@ def test_civil1_skin_export_renders_clean(client: TestClient) -> None:
     full_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
     assert "classified waterway" in full_text  # narration subdoc rendered
     assert "Executive Summary" in full_text
-    assert "Prepared with Civil1" not in full_text  # footer text lives in footer part
     footer_text = "\n".join(
         paragraph.text
         for section in document.sections
         for paragraph in section.footer.paragraphs
     )
-    assert "Prepared with Civil1" in footer_text
+    assert "Powered by Civil1.ai" in footer_text
     assert "{{" not in full_text and "}}" not in full_text
+
+
+def test_civil1_cover_embeds_customer_logo(client: TestClient) -> None:
+    bootstrap = bootstrap_client_user(client, "user-logo", name="Branded Firm")
+    tenant_id = bootstrap["memberships"][0]["tenant_id"]
+    headers = {"X-Dev-User-Id": "user-logo", "X-Tenant-Id": tenant_id}
+    store = get_store()
+    logo_key = tenant_logo_s3_key(tenant_id, "logo.png")
+    artifact_svc.store_artifact_bytes(logo_key, _PNG, content_type="image/png")
+    tenant = store.get_tenant(tenant_id)
+    store.put_tenant(
+        tenant.model_copy(
+            update={"logo_s3_key": logo_key, "export_skin": "civil1_study_v1"}
+        )
+    )
+    project_id = client.post(
+        "/v1/projects",
+        json={"name": "Branded", "address": "9 Cover St"},
+        headers=headers,
+    ).json()["project_id"]
+
+    job = client.post(
+        f"/v1/projects/{project_id}/exports", json={}, headers=headers
+    ).json()
+    assert job["status"] == "succeeded"
+    assert job["skin_id"] == "civil1_study_v1"
+    assert "placeholder_leak" not in {finding["check"] for finding in job["findings"]}
+
+    downloaded = client.get(
+        f"/v1/projects/{project_id}/artifacts/download",
+        params={"key": job["docx_s3_key"]},
+        headers=headers,
+    )
+    document = docx.Document(BytesIO(downloaded.content))
+    # No BYO exhibits here, so any inline image is the customer logo on the cover.
+    assert len(document.inline_shapes) >= 1
+
+
+def test_civil1_cover_without_logo_falls_back_to_firm_name(client: TestClient) -> None:
+    bootstrap = bootstrap_client_user(client, "user-nologo", name="Unbranded Firm")
+    tenant_id = bootstrap["memberships"][0]["tenant_id"]
+    headers = {"X-Dev-User-Id": "user-nologo", "X-Tenant-Id": tenant_id}
+    project_id = client.post(
+        "/v1/projects",
+        json={"name": "Plain", "address": "10 Cover St"},
+        headers=headers,
+    ).json()["project_id"]
+    job = client.post(
+        f"/v1/projects/{project_id}/exports",
+        json={"skin_id": "civil1_study_v1"},
+        headers=headers,
+    ).json()
+    assert job["status"] == "succeeded"
+    downloaded = client.get(
+        f"/v1/projects/{project_id}/artifacts/download",
+        params={"key": job["docx_s3_key"]},
+        headers=headers,
+    )
+    document = docx.Document(BytesIO(downloaded.content))
+    full_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    assert "Unbranded Firm" in full_text  # firm name carries the brand
+    assert not document.inline_shapes  # no logo image, no leak
+    assert "{{" not in full_text
 
 
 def test_tenant_export_skin_preference_selects_civil1(client: TestClient) -> None:
