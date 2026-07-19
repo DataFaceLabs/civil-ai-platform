@@ -20,6 +20,12 @@ from civilai_platform.store.base import PlatformStore
 _MISSING = "Not available from current project data."
 
 
+def _normalize_identity(value: str) -> str:
+    """Compare project name vs address without punctuation/case noise."""
+    return re.sub(r"[^a-z0-9]+", "", value.casefold())
+
+
+
 class _PlainTextParser(HTMLParser):
     _BLOCKS = {"p", "div", "br", "li", "h1", "h2", "h3", "h4", "blockquote"}
 
@@ -161,8 +167,19 @@ def build_export_context(
     # Cover identity lines render *blank* when unknown -- ACE's delivered covers simply
     # omit lines they don't have; printing "Not available..." six times on a cover is a
     # presentation defect, not honesty (facts in the body keep the explicit missing text).
+    property_address = (project.address or "").strip()
+    project_name = (project.name or "").strip()
+    # When the project was named as the street address, only print it once on the cover.
+    cover_project_name = (
+        ""
+        if project_name
+        and property_address
+        and _normalize_identity(project_name) == _normalize_identity(property_address)
+        else project_name
+    )
     values: dict[str, str] = {
-        "project_name": project.name,
+        "project_name": project_name or property_address,
+        "cover_project_name": cover_project_name,
         "preparer_name": _pick(fields, "preparer_name", default=""),
         "firm_name": tenant.name,
         "firm_address": tenant.address or "",
@@ -177,7 +194,7 @@ def build_export_context(
         "client_phone": contact.phone if contact else "",
         "proposed_development": state.proposed_use or _MISSING,
         "report_date": datetime.now(UTC).date().isoformat(),
-        "property_address": project.address,
+        "property_address": property_address,
         "property_acres": acreage,
         "existing_development": _pick(fields, "existing_development", "existing_land_use"),
         "tcad_info": _pick(fields, "tcad_info", "legal_desc", "legal_description"),
@@ -215,13 +232,14 @@ def build_export_context(
         "completed_docs": _pick(fields, "completed_docs"),
     }
     for index in range(1, 6):
+        # Empty unused slots (not _MISSING) so the skin can omit list/table rows.
         values[f"recommendation_{index}"] = (
-            recommendations[index - 1] if len(recommendations) >= index else _MISSING
+            recommendations[index - 1] if len(recommendations) >= index else ""
         )
         values[f"exhibit_{index}"] = (
             (state.map_exhibits[index - 1].label or state.map_exhibits[index - 1].name)
             if len(state.map_exhibits) >= index
-            else _MISSING
+            else ""
         )
 
     narration = {

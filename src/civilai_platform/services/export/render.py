@@ -16,6 +16,7 @@ from docxtpl import DocxTemplate, InlineImage  # type: ignore[import-untyped]
 from civilai_platform.models.entities import MapExhibit
 from civilai_platform.services import artifacts as artifact_svc
 from civilai_platform.services.export.context import ExportContext
+from civilai_platform.services.export.polish import polish_export_docx
 from civilai_platform.services.export.skins import Skin
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
@@ -130,7 +131,9 @@ def render_docx(context: ExportContext, skin: Skin) -> bytes:
     render_values["customer_logo"] = _customer_logo(template, context.customer_logo)
     render_values["cover_aerial"] = _cover_aerial(template, context.exhibits)
     for token in skin.narration_tokens:
-        text = context.narration.get(token) or "Not available from current project data."
+        text = (context.narration.get(token) or "").strip()
+        if not text:
+            text = "Not available from current project data."
         render_values[token] = _narration_subdoc(template, text)
 
     # StrictUndefined would turn optional, intentionally unfilled tenant fields into
@@ -142,4 +145,5 @@ def render_docx(context: ExportContext, skin: Skin) -> bytes:
     template.render(render_values)
     output = BytesIO()
     template.save(output)
-    return _append_byo_exhibits(output.getvalue(), context.exhibits)
+    polished = polish_export_docx(output.getvalue())
+    return _append_byo_exhibits(polished, context.exhibits)
