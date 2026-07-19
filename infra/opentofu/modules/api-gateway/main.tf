@@ -167,10 +167,13 @@ data "aws_iam_policy_document" "lambda" {
   }
 
   statement {
-    sid       = "SelfInvokeAsyncAgent"
-    effect    = "Allow"
-    actions   = ["lambda:InvokeFunction"]
-    resources = ["arn:aws:lambda:${var.aws_region}:*:function:${local.name_prefix}-api"]
+    sid     = "SelfInvokeAsyncAgent"
+    effect  = "Allow"
+    actions = ["lambda:InvokeFunction"]
+    resources = [
+      "arn:aws:lambda:${var.aws_region}:*:function:${local.name_prefix}-api",
+      "arn:aws:lambda:${var.aws_region}:*:function:${local.name_prefix}-export-pdf",
+    ]
   }
 }
 
@@ -257,6 +260,9 @@ resource "aws_lambda_function" "platform" {
       # DOCX generation and BYO exhibit composition also run as a Lambda Event worker;
       # the POST returns a pollable job before API Gateway's synchronous timeout.
       CIVILAI_EXPORT_ASYNC = "true"
+      # LibreOffice DOCX→PDF converter (container Lambda). Empty until the export-pdf
+      # function exists; deploy-export-pdf.sh pushes the real image after tofu apply.
+      CIVILAI_EXPORT_PDF_FUNCTION = aws_lambda_function.export_pdf[0].function_name
       # Section drafts use the deterministic fetch/dispatch/render pipeline instead of
       # the legacy multi-turn Strands tool loop (keeps facts section-scoped, lower tokens).
       CIVILAI_DRAFT_PIPELINE = "1"
@@ -414,6 +420,96 @@ output "lambda_function_name" {
   value = var.create_http_api ? aws_lambda_function.platform[0].function_name : ""
 }
 
+output "export_pdf_function_name" {
+  value = var.create_http_api ? aws_lambda_function.export_pdf[0].function_name : ""
+}
+
+output "export_pdf_ecr_repository_url" {
+  value = var.create_http_api ? aws_ecr_repository.export_pdf[0].repository_url : ""
+}
+
 output "api_endpoint" {
   value = var.create_http_api ? aws_apigatewayv2_api.main[0].api_endpoint : "https://api-${var.environment}.civil1.ai"
+}
+
+# ── M1-X2: LibreOffice DOCX→PDF converter (container Lambda) ─────────────────
+# Image URI starts as the public Python Lambda base so tofu can create the function
+# before scripts/deploy-export-pdf.sh pushes the real LO image. image_uri is ignored
+# on subsequent applies (same decoupling pattern as the zip API Lambda).
+
+resource "aws_ecr_repository" "export_pdf" {
+  count                = var.create_http_api ? 1 : 0
+  name                 = "${local.name_prefix}-export-pdf"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+data "aws_iam_policy_document" "export_pdf" {
+  count = var.create_http_api ? 1 : 0
+
+  statement {
+    sid    = "S3ExportArtifacts"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+    ]
+    resources = ["${var.app_bucket_arn}/*"]
+  }
+}
+
+resource "aws_iam_role" "export_pdf" {
+  count = var.create_http_api ? 1 : 0
+  name  = "${local.name_prefix}-export-pdf"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "export_pdf" {
+  count  = var.create_http_api ? 1 : 0
+  name   = "${local.name_prefix}-export-pdf"
+  role   = aws_iam_role.export_pdf[0].id
+  policy = data.aws_iam_policy_document.export_pdf[0].json
+}
+
+resource "aws_iam_role_policy_attachment" "export_pdf_basic" {
+  count      = var.create_http_api ? 1 : 0
+  role       = aws_iam_role.export_pdf[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_lambda_function" "export_pdf" {
+  count = var.create_http_api ? 1 : 0
+
+  function_name = "${local.name_prefix}-export-pdf"
+  role          = aws_iam_role.export_pdf[0].arn
+  package_type  = "Image"
+  # Placeholder until deploy-export-pdf.sh pushes the LibreOffice image to ECR and
+  # updates this function. Must be arm64 to match the API Lambda.
+  image_uri     = "public.ecr.aws/lambda/python:3.12-arm64"
+  architectures = ["arm64"]
+  memory_size   = 3008
+  timeout       = 120
+
+  environment {
+    variables = {
+      CIVILAI_APP_BUCKET = replace(var.app_bucket_arn, "arn:aws:s3:::", "")
+      HOME               = "/tmp"
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [image_uri]
+  }
 }
