@@ -154,4 +154,63 @@ def test_polish_scrubs_inline_missing_sentences() -> None:
     out = docx.Document(BytesIO(polished))
     texts = [p.text.strip() for p in out.paragraphs if p.text.strip()]
     assert all(_MISSING not in t for t in texts)
-    assert any("Travis County" in t for t in texts)
+    assert any("is located in Travis County" in t for t in texts)
+
+
+def test_polish_clock_tower_presentation_defects() -> None:
+    document = docx.Document()
+    document.add_heading("3.1 Zoning", level=2)
+    document.add_paragraph("Zoning")
+    document.add_paragraph("Zoning District")
+    document.add_paragraph(
+        "According to information provided, the property is zoned Commercial Highway (CH)."
+    )
+    document.add_heading("3.2 Platting", level=2)
+    document.add_heading("3.7 Right of Way", level=2)
+    document.add_paragraph(
+        "Road class: Local street (inferred)\n"
+        "The road is inferred to be a local street. Frontage on Clock Tower Drive."
+    )
+    document.add_paragraph(
+        "According to the maps and additional data the property Surface hydrology "
+        "characterization pending USGS NHD overlay."
+    )
+    document.add_paragraph("1 Purpose Scope")
+    before = BytesIO()
+    document.save(before)
+
+    polished = polish_export_docx(before.getvalue())
+    out = docx.Document(BytesIO(polished))
+    texts = [p.text.strip() for p in out.paragraphs if p.text.strip()]
+    joined = "\n".join(texts)
+
+    assert "Zoning District" not in texts
+    assert texts.count("Zoning") == 0
+    assert "3.2 Platting" not in joined  # empty leaf collapsed
+    assert "Local street (inferred)" not in joined
+    assert "inferred to be a local street" not in joined.lower()
+    assert "Local Road" in joined
+    assert "the property Surface" not in joined
+    assert "Purpose & Scope" in joined
+    assert "is zoned Commercial Highway" in joined
+
+
+def test_linter_allows_outline_subsequence_after_polish() -> None:
+    from civilai_platform.services.export.linter import lint_docx
+    from civilai_platform.services.export.skins import get_skin
+
+    document = docx.Document()
+    document.add_heading("1. Purpose and Scope", level=2)
+    document.add_paragraph("Scope body.")
+    document.add_heading("2. Description of the Property", level=2)
+    document.add_paragraph("Property body.")
+    document.add_heading("3. Feasibility Study", level=2)
+    document.add_paragraph("Feasibility body.")
+    document.add_heading("4. Summary", level=2)
+    document.add_paragraph("Summary body.")
+    document.add_heading("EXHIBITS", level=2)
+    document.add_paragraph("Exhibits.")
+    buf = BytesIO()
+    document.save(buf)
+    findings = lint_docx(buf.getvalue(), get_skin("atxcivil_v1"))
+    assert "heading_sequence" not in {f["check"] for f in findings}
