@@ -363,7 +363,6 @@ class ProjectStatePatch(BaseModel):
     client_contacts: list[ClientContact] | None = None
     client_notes: list[ClientNote] | None = None
     references: list[dict] | None = None
-    records_to_pull: dict[str, dict] | None = None
     feasibility_document: FeasibilityDocumentRef | None = None
     verification_steps: list[VerificationStep] | None = None
 
@@ -382,7 +381,6 @@ class ProjectStateResponse(BaseModel):
     client_contacts: list[ClientContact]
     client_notes: list[ClientNote]
     references: list[dict]
-    records_to_pull: dict[str, dict] = Field(default_factory=dict)
     feasibility_document: FeasibilityDocumentRef | None
     verification_steps: list[VerificationStep]
     updated_at: datetime
