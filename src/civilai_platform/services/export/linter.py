@@ -24,6 +24,19 @@ def _finding(check: str, detail: str) -> dict[str, str]:
     return {"check": check, "detail": detail}
 
 
+def _is_ordered_subsequence(got: list[str], expected: list[str]) -> bool:
+    """True when every item in ``got`` appears in ``expected`` in the same order."""
+    if not got:
+        return False
+    index = 0
+    for token in got:
+        try:
+            index = expected.index(token, index) + 1
+        except ValueError:
+            return False
+    return True
+
+
 def lint_docx(payload: bytes, skin: Skin) -> list[dict[str, str]]:
     document = docx.Document(BytesIO(payload))
     text = "\n".join(paragraph.text for paragraph in document.paragraphs)
@@ -39,12 +52,14 @@ def lint_docx(payload: bytes, skin: Skin) -> list[dict[str, str]]:
             outline.append("EXHIBITS")
         elif match := _OUTLINE_RE.match(heading):
             outline.append(match.group(1))
-    if skin.outline and tuple(outline) != skin.outline:
+    # Empty leaf headings may be polished away; require an ordered subsequence of
+    # the skin outline (got ⊆ expected, same order), not byte-identical equality.
+    if skin.outline and not _is_ordered_subsequence(outline, list(skin.outline)):
         findings.append(
             _finding(
                 "heading_sequence",
                 f"outline does not match skin {skin.id}: "
-                f"expected {list(skin.outline)}, got {outline}",
+                f"expected subsequence of {list(skin.outline)}, got {outline}",
             )
         )
 
