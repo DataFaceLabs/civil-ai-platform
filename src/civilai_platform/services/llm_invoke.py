@@ -52,7 +52,9 @@ def _snake_guardrails(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _snake_web_search(raw: dict[str, Any], *, search_context_hint: str, enabled: bool) -> dict[str, Any]:
+def _snake_web_search(
+    raw: dict[str, Any], *, search_context_hint: str, enabled: bool
+) -> dict[str, Any]:
     return {
         "enabled": enabled,
         "execution_mode": raw.get("executionMode", "server"),
@@ -209,7 +211,9 @@ def _execute_job(
     return job
 
 
-def _enqueue_async_completion(*, tenant_id: str, job_id: str) -> None:
+def _enqueue_async_completion(
+    *, tenant_id: str, job_id: str, data_api_base: str | None = None
+) -> None:
     """Fire-and-forget self-invoke so API Gateway can return before Bedrock finishes."""
     import boto3
 
@@ -221,6 +225,7 @@ def _enqueue_async_completion(*, tenant_id: str, job_id: str) -> None:
         "civilai_async": "complete_llm_invoke",
         "tenant_id": tenant_id,
         "job_id": job_id,
+        "data_api_base": data_api_base,
     }
     boto3.client("lambda").invoke(
         FunctionName=function_name,
@@ -242,7 +247,9 @@ def complete_llm_invoke_from_event(store: PlatformStore, event: dict[str, Any]) 
         return None
     if job.status in {LlmInvokeJobStatus.SUCCEEDED, LlmInvokeJobStatus.FAILED}:
         return job
-    return _execute_job(store, job)
+    data_api_base = str(event.get("data_api_base") or "").strip()
+    client = DataProxyClient(base_url=data_api_base) if data_api_base else None
+    return _execute_job(store, job, client=client)
 
 
 def invoke_tenant_section_llm_sync(
@@ -371,7 +378,11 @@ def start_tenant_llm_invoke(
     store.put_llm_invoke_job(job)
 
     try:
-        _enqueue_async_completion(tenant_id=tenant_id, job_id=job.job_id)
+        _enqueue_async_completion(
+            tenant_id=tenant_id,
+            job_id=job.job_id,
+            data_api_base=client.base_url if client else None,
+        )
         return job_to_response(job)
     except Exception:
         logger.exception("async LLM enqueue failed; falling back to sync execution")

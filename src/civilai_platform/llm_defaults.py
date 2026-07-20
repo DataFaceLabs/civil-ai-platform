@@ -14,6 +14,20 @@ LLM_SECTION_STEP_KEYS = [
     "draft",
 ]
 
+# Shared ArcGIS viewer hosts from ATX's Tier B list are connector-discovery links,
+# not trusted publication domains for agent web search.
+ATX_CIVIL_SEARCH_DOMAINS = [
+    "texas.gov",
+    "fema.gov",
+    "usda.gov",
+    "austintexas.gov",
+    "traviscad.org",
+    "tccsearch.org",
+    "traviscountytx.gov",
+    "txdot.gov",
+    "municode.com",
+]
+
 SHARED_SYSTEM_PROMPT = (
     "You assist civil engineers drafting land-development feasibility studies.\n"
     "Use only the field values provided. Do not invent facts, permits, or utility commitments.\n"
@@ -95,7 +109,7 @@ def _section_config(step_key: str) -> dict[str, Any]:
                     "source URL and cite only sources returned by the search. If a fact is not "
                     "in the field values or the search results, state that it is unverified "
                     "rather than inferring it.\n\n"
-                    "Never state a specific fire code edition (e.g. \"2021 IFC\") unless the "
+                    'Never state a specific fire code edition (e.g. "2021 IFC") unless the '
                     "IFC edition field below has a value. If it is empty, say the current fire "
                     "code adoption should be confirmed with the fire protection district -- do "
                     "not guess an edition from the jurisdiction or fire district name alone.\n\n"
@@ -177,13 +191,7 @@ def default_llm_lab_config() -> dict[str, Any]:
             "restrictProviderDomains": False,
             "maxQueriesPerInvoke": 3,
             "maxResultsPerQuery": 5,
-            "allowedDomains": [
-                "*.texas.gov",
-                "municode.com",
-                "library.municode.com",
-                "austintexas.gov",
-                "tcad.org",
-            ],
+            "allowedDomains": list(ATX_CIVIL_SEARCH_DOMAINS),
             "blockedDomains": ["reddit.com", "twitter.com", "facebook.com"],
             "searchDepth": "advanced",
             "includeTraceInResponse": True,

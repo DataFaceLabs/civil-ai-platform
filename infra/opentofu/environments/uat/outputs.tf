@@ -6,6 +6,10 @@ output "data_api_base_url" {
   value = module.data_api_ec2.data_api_base_url_http
 }
 
+output "dev_data_api_base_url" {
+  value = module.data_api_ec2.dev_data_api_base_url_http
+}
+
 output "platform_api_endpoint" {
   value = var.create_platform_http_api ? module.api_gateway[0].api_endpoint : null
 }

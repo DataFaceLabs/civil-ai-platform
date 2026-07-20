@@ -7,6 +7,16 @@ _handler = Mangum(create_app(), lifespan="off")
 
 
 def handler(event, context):
+    if isinstance(event, dict) and event.get("civilai_async") == "complete_export":
+        from civilai_platform.services.export import service as export_svc
+
+        get_store.cache_clear()
+        export_job = export_svc.complete_export_from_event(get_store(), event)
+        return {
+            "ok": True,
+            "job_id": export_job.job_id if export_job else None,
+            "status": export_job.status.value if export_job else None,
+        }
     if isinstance(event, dict) and event.get("civilai_async") == "complete_agent_run":
         from civilai_platform.services import agent_run as agent_run_svc
 

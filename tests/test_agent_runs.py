@@ -23,7 +23,25 @@ def client() -> TestClient:
         yield test_client
 
 
-def test_agent_run_create_and_get(client: TestClient) -> None:
+def test_agent_run_create_and_get(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CIVILAI_DEV_DATA_API_BASE", "http://dev-data.test:8001")
+    monkeypatch.setenv("CIVILAI_DEV_DATA_ORIGINS", "https://develop.example.com")
+    selected_bases: list[str | None] = []
+
+    def _fake_agent(context_payload: dict, *, dry_run: bool) -> dict:
+        assert dry_run is True
+        selected_bases.append(context_payload.get("_data_api_base"))
+        return {
+            "message": "Draft complete.",
+            "artifacts": [],
+            "trace_summary": {"tools_used": []},
+            "guardrail_warnings": [],
+        }
+
+    monkeypatch.setattr(
+        "civilai_platform.services.agent_run._invoke_strands_agent",
+        _fake_agent,
+    )
     user_id = "user-agent"
     bootstrap = bootstrap_client_user(
         client,
@@ -32,7 +50,11 @@ def test_agent_run_create_and_get(client: TestClient) -> None:
         name="Agent Firm",
     )
     tenant_id = bootstrap["memberships"][0]["tenant_id"]
-    headers = {"X-Dev-User-Id": user_id, "X-Tenant-Id": tenant_id}
+    headers = {
+        "X-Dev-User-Id": user_id,
+        "X-Tenant-Id": tenant_id,
+        "Origin": "https://develop.example.com",
+    }
 
     project = client.post(
         "/v1/projects",
@@ -75,6 +97,7 @@ def test_agent_run_create_and_get(client: TestClient) -> None:
     assert chat_body["status"] == "succeeded"
     assert chat_body["workflow"] == "assistant_chat"
     assert chat_body["message"]
+    assert selected_bases == ["http://dev-data.test:8001", "http://dev-data.test:8001"]
 
     fetched = client.get(
         f"/v1/projects/{project_id}/agent-runs/{body['run_id']}",

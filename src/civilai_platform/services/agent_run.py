@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from civilai_platform.models.entities import AgentRun, AgentRunStatus, new_id, utc_now
@@ -21,6 +23,34 @@ from civilai_platform.store.keys import agent_run_s3_prefix
 logger = logging.getLogger(__name__)
 
 _memory_agent_payloads: dict[str, bytes] = {}
+
+
+@contextmanager
+def _agent_data_api_base(base_url: str | None) -> Iterator[None]:
+    """Route both deterministic-pipeline and tool-loop reads for one Lambda invocation."""
+    if not base_url:
+        yield
+        return
+
+    previous = os.environ.get("CIVILAI_DATA_API_BASE")
+    os.environ["CIVILAI_DATA_API_BASE"] = base_url
+    try:
+        # The legacy tool loop caches its client globally; the deterministic pipeline
+        # reads the environment afresh. Set both so either execution path is isolated.
+        from civilai_agent.tools.data_client import DataApiClient
+        from civilai_agent.tools.facts import set_data_client
+
+        set_data_client(DataApiClient(base_url=base_url))
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("CIVILAI_DATA_API_BASE", None)
+        else:
+            os.environ["CIVILAI_DATA_API_BASE"] = previous
+        from civilai_agent.tools.data_client import DataApiClient
+        from civilai_agent.tools.facts import set_data_client
+
+        set_data_client(DataApiClient(base_url=previous) if previous else DataApiClient())
 
 
 def _truthy_env(name: str, default: str = "0") -> bool:
@@ -92,7 +122,8 @@ def _invoke_strands_agent(context_payload: dict[str, Any], *, dry_run: bool) -> 
         chat_system_prompt=str(context_payload.get("chat_system_prompt") or ""),
         chat_instructions=chat_instructions,
     )
-    response = run_agent(context, dry_run=dry_run)
+    with _agent_data_api_base(context_payload.get("_data_api_base")):
+        response = run_agent(context, dry_run=dry_run)
     return response.model_dump(mode="json")
 
 
@@ -149,7 +180,11 @@ def _build_context_payload(
     tenant = store.get_tenant(tenant_id)
     project = store.get_project(tenant_id, project_id)
     resolved_entity_id = entity_id or _entity_id_from_state(store, tenant_id, project_id)
-    resolved_field_context = field_context or {}
+    resolved_field_context = dict(field_context or {})
+    # Canonical spoken address = project.address (covers multi-situs same entity).
+    canonical = (project.address or "").strip() if project else ""
+    if canonical:
+        resolved_field_context["PROPERTY_ADDRESS"] = canonical
     chat_system_prompt, chat_instructions = resolve_chat_prompts(tenant_llm)
     request = request_text
     system_prompt = ""
@@ -380,6 +415,7 @@ def start_agent_run(
     user_guidance: str | None = None,
     fields_unchanged: bool = False,
     actor_role: str | None = None,
+    data_api_base: str | None = None,
 ) -> AgentRun:
     now = utc_now()
     run_id = new_id()
@@ -401,6 +437,8 @@ def start_agent_run(
         user_guidance=user_guidance,
         fields_unchanged=fields_unchanged,
     )
+    if data_api_base:
+        context_payload["_data_api_base"] = data_api_base
     run = AgentRun(
         run_id=run_id,
         tenant_id=tenant_id,

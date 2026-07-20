@@ -97,6 +97,7 @@ module "data_api_ec2" {
   allowed_ssh_cidr_blocks    = var.allowed_ssh_cidr_blocks
   allowed_api_cidr_blocks    = var.allowed_api_cidr_blocks
   serving_s3_uri             = var.serving_s3_uri
+  dev_serving_s3_uri         = var.dev_serving_s3_uri
   data_lake_bucket           = var.data_lake_bucket
   data_lake_prefix           = var.data_lake_prefix
   data_service_key_parameter = module.secrets.data_service_key_parameter_name
@@ -122,6 +123,8 @@ module "api_gateway" {
   agent_corpus_bucket        = module.s3_agent_corpus[0].bucket_name
   agent_corpus_bucket_arn    = module.s3_agent_corpus[0].bucket_arn
   data_api_base_url          = module.data_api_ec2.data_api_base_url_http
+  dev_data_api_base_url      = module.data_api_ec2.dev_data_api_base_url_http
+  dev_data_origins           = var.dev_data_origins
   data_service_key_parameter = module.secrets.data_service_key_parameter_name
   data_service_key           = module.secrets.data_service_key
   create_http_api            = true

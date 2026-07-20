@@ -7,6 +7,7 @@ from pathlib import Path
 from civilai_platform.models.entities import (
     AuditEvent,
     Client,
+    ExportJob,
     Project,
     ProjectActivity,
     ProjectState,
@@ -36,9 +37,7 @@ class FileStore(MemoryStore):
         if not self._snapshot.exists():
             return
         raw = json.loads(self._snapshot.read_text(encoding="utf-8"))
-        self._tenants = {
-            k: Tenant.model_validate(v) for k, v in raw.get("tenants", {}).items()
-        }
+        self._tenants = {k: Tenant.model_validate(v) for k, v in raw.get("tenants", {}).items()}
         # Rebuild the derived slug index: MemoryStore maintains it only in put_tenant, so
         # a load-from-disk (every server restart) would otherwise leave get_tenant_by_slug
         # returning None even though the tenant is present by id. That breaks the public
@@ -67,6 +66,10 @@ class FileStore(MemoryStore):
             tuple(k.split(":", 2)): ProjectActivity.model_validate(v)
             for k, v in raw.get("project_activity", {}).items()
         }
+        self._export_jobs = {
+            tuple(k.split(":", 2)): ExportJob.model_validate(v)
+            for k, v in raw.get("export_jobs", {}).items()
+        }
         self._audit = [AuditEvent.model_validate(v) for v in raw.get("audit", [])]
         self._platform_admins = set(raw.get("platform_admins", []))
 
@@ -94,6 +97,10 @@ class FileStore(MemoryStore):
                 "project_activity": {
                     f"{tid}:{pid}:{eid}": event.model_dump(mode="json")
                     for (tid, pid, eid), event in self._project_activity.items()
+                },
+                "export_jobs": {
+                    f"{tid}:{pid}:{jid}": job.model_dump(mode="json")
+                    for (tid, pid, jid), job in self._export_jobs.items()
                 },
                 "audit": [e.model_dump(mode="json") for e in self._audit],
                 "platform_admins": sorted(self._platform_admins),
@@ -150,6 +157,10 @@ class FileStore(MemoryStore):
 
     def put_project_activity(self, event: ProjectActivity) -> None:
         super().put_project_activity(event)
+        self._save()
+
+    def put_export_job(self, job: ExportJob) -> None:
+        super().put_export_job(job)
         self._save()
 
     def delete_project_activity(self, tenant_id: str, project_id: str, event_id: str) -> None:

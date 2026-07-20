@@ -1,6 +1,6 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from civilai_platform.api.deps import (
     admin_ctx,
@@ -8,6 +8,7 @@ from civilai_platform.api.deps import (
     platform_admin_tenant_ctx,
     tenant_admin_ctx,
 )
+from civilai_platform.auth.actor import tenant_actor_user_id
 from civilai_platform.auth.context import AuthContext
 from civilai_platform.models.api import (
     LlmConfigResponse,
@@ -20,9 +21,9 @@ from civilai_platform.models.api import (
 from civilai_platform.services import artifacts as artifact_svc
 from civilai_platform.services import llm_config as llm_config_svc
 from civilai_platform.services import llm_invoke as llm_invoke_svc
-from civilai_platform.auth.actor import tenant_actor_user_id
 from civilai_platform.services.audit import record_audit, record_audit_for_ctx
 from civilai_platform.services.data_proxy import DataProxyClient
+from civilai_platform.services.data_routing import data_api_base_for_request
 from civilai_platform.store.base import PlatformStore
 
 router = APIRouter(tags=["llm", "tenant-branding"])
@@ -108,6 +109,7 @@ def restore_tenant_llm_config(
 @router.post("/v1/tenant/llm/invoke")
 def invoke_tenant_llm(
     body: TenantLlmInvokeRequest,
+    request: Request,
     ctx: Annotated[AuthContext, Depends(platform_admin_tenant_ctx)],
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> dict[str, Any] | LlmInvokeJobResponse:
@@ -124,6 +126,7 @@ def invoke_tenant_llm(
             search_context_hint=body.search_context_hint,
             invoke_mode=body.invoke_mode,
             web_search_enabled=body.web_search_enabled,
+            client=DataProxyClient(base_url=data_api_base_for_request(request)),
         )
     except Exception as exc:
         raise HTTPException(502, f"LLM invoke failed: {exc}") from exc

@@ -47,6 +47,18 @@ variable "data_api_base_url" {
   type = string
 }
 
+variable "dev_data_api_base_url" {
+  type        = string
+  default     = ""
+  description = "Optional dev data plane selected only for exact dev_data_origins."
+}
+
+variable "dev_data_origins" {
+  type        = list(string)
+  default     = []
+  description = "Exact browser Origins permitted to select dev_data_api_base_url."
+}
+
 variable "data_service_key_parameter" {
   type = string
 }
@@ -155,10 +167,13 @@ data "aws_iam_policy_document" "lambda" {
   }
 
   statement {
-    sid       = "SelfInvokeAsyncAgent"
-    effect    = "Allow"
-    actions   = ["lambda:InvokeFunction"]
-    resources = ["arn:aws:lambda:${var.aws_region}:*:function:${local.name_prefix}-api"]
+    sid     = "SelfInvokeAsyncAgent"
+    effect  = "Allow"
+    actions = ["lambda:InvokeFunction"]
+    resources = [
+      "arn:aws:lambda:${var.aws_region}:*:function:${local.name_prefix}-api",
+      "arn:aws:lambda:${var.aws_region}:*:function:${local.name_prefix}-export-pdf",
+    ]
   }
 }
 
@@ -205,24 +220,36 @@ resource "aws_lambda_function" "platform" {
   # Sync API Gateway requests must return in <=29s. Agent-runs and async tenant LLM
   # invoke enqueue Lambda Event workers (CIVILAI_AGENT_ASYNC=true). Draft LLM upstream
   # timeout is ~660s — worker needs Lambda max headroom (900s).
-  timeout       = 900
-  memory_size   = 1024
+  timeout     = 900
+  memory_size = 1024
 
   filename         = var.lambda_package_path
   source_code_hash = filebase64sha256(var.lambda_package_path)
 
+  lifecycle {
+    # Code deploys are decoupled from infra applies: scripts/deploy-lambda.sh
+    # (package + update-function-code) is the code path. Without this, any
+    # machine holding a stale dist/platform-lambda.zip would silently ROLL BACK
+    # the customer API on a routine `tofu apply` (observed 2026-07-19: local zip
+    # from 07-15 vs deployed code from 07-17). The zip is still required at
+    # create time for the initial deploy.
+    ignore_changes = [filename, source_code_hash]
+  }
+
   environment {
     variables = {
-      CIVILAI_ENVIRONMENT        = var.environment
-      CIVILAI_DEV_AUTH           = var.dev_auth ? "true" : "false"
-      CIVILAI_STORE_BACKEND      = "dynamodb"
-      CIVILAI_DYNAMODB_TABLE     = "civilai-app-${var.environment}"
-      CIVILAI_ARTIFACT_BACKEND   = "s3"
-      CIVILAI_APP_BUCKET         = replace(var.app_bucket_arn, "arn:aws:s3:::", "")
-      CIVILAI_AGENT_CORPUS_BUCKET = var.agent_corpus_bucket
-      CIVILAI_DATA_API_BASE      = var.data_api_base_url
-      CIVILAI_DATA_SERVICE_KEY   = var.data_service_key
-      CIVILAI_COGNITO_USER_POOL_ID = var.cognito_user_pool_id
+      CIVILAI_ENVIRONMENT           = var.environment
+      CIVILAI_DEV_AUTH              = var.dev_auth ? "true" : "false"
+      CIVILAI_STORE_BACKEND         = "dynamodb"
+      CIVILAI_DYNAMODB_TABLE        = "civilai-app-${var.environment}"
+      CIVILAI_ARTIFACT_BACKEND      = "s3"
+      CIVILAI_APP_BUCKET            = replace(var.app_bucket_arn, "arn:aws:s3:::", "")
+      CIVILAI_AGENT_CORPUS_BUCKET   = var.agent_corpus_bucket
+      CIVILAI_DATA_API_BASE         = var.data_api_base_url
+      CIVILAI_DEV_DATA_API_BASE     = var.dev_data_api_base_url
+      CIVILAI_DEV_DATA_ORIGINS      = join(",", var.dev_data_origins)
+      CIVILAI_DATA_SERVICE_KEY      = var.data_service_key
+      CIVILAI_COGNITO_USER_POOL_ID  = var.cognito_user_pool_id
       CIVILAI_COGNITO_APP_CLIENT_ID = var.cognito_client_id
       # Live Strands agent (false). Local tests / e2e-platform.sh override to true.
       CIVILAI_AGENT_DRY_RUN = "false"
@@ -230,6 +257,12 @@ resource "aws_lambda_function" "platform" {
       # Lambda Event self-invoke (API Gateway ~29s sync cap). Also read as
       # CIVILAI_LLM_ASYNC default by llm_invoke.llm_invoke_async_enabled().
       CIVILAI_AGENT_ASYNC = "true"
+      # DOCX generation and BYO exhibit composition also run as a Lambda Event worker;
+      # the POST returns a pollable job before API Gateway's synchronous timeout.
+      CIVILAI_EXPORT_ASYNC = "true"
+      # LibreOffice DOCX→PDF converter (container Lambda). Empty until the export-pdf
+      # function exists; deploy-export-pdf.sh pushes the real image after tofu apply.
+      CIVILAI_EXPORT_PDF_FUNCTION = aws_lambda_function.export_pdf[0].function_name
       # Section drafts use the deterministic fetch/dispatch/render pipeline instead of
       # the legacy multi-turn Strands tool loop (keeps facts section-scoped, lower tokens).
       CIVILAI_DRAFT_PIPELINE = "1"
@@ -304,7 +337,7 @@ resource "aws_apigatewayv2_route" "default" {
   # to the app layer (get_auth_context's X-Dev-User-Id fallback) or every request 401s at
   # API Gateway before Lambda ever runs.
   authorization_type = var.dev_auth ? "NONE" : "JWT"
-  authorizer_id       = var.dev_auth ? null : aws_apigatewayv2_authorizer.cognito[0].id
+  authorizer_id      = var.dev_auth ? null : aws_apigatewayv2_authorizer.cognito[0].id
 }
 
 # Browsers never send an Authorization header on a CORS preflight OPTIONS request, so
@@ -346,12 +379,27 @@ resource "aws_apigatewayv2_route" "public" {
   authorization_type = "NONE"
 }
 
+# Access-log group was originally created out-of-band (console, release-migration
+# era) and imported into state 2026-07-19 — without this resource + the stage block
+# below, every plan wanted to strip live access logging.
+resource "aws_cloudwatch_log_group" "apigw_access" {
+  count = var.create_http_api ? 1 : 0
+
+  name              = "/aws/apigateway/${local.name_prefix}-access"
+  retention_in_days = 3
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   count = var.create_http_api ? 1 : 0
 
   api_id      = aws_apigatewayv2_api.main[0].id
   name        = "$default"
   auto_deploy = true
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.apigw_access[0].arn
+    format          = "$context.requestId $context.requestTime $context.httpMethod $context.path $context.status ip=$context.identity.sourceIp ua=$context.identity.userAgent sub=$context.authorizer.claims.sub"
+  }
 }
 
 resource "aws_lambda_permission" "apigw" {
@@ -372,6 +420,96 @@ output "lambda_function_name" {
   value = var.create_http_api ? aws_lambda_function.platform[0].function_name : ""
 }
 
+output "export_pdf_function_name" {
+  value = var.create_http_api ? aws_lambda_function.export_pdf[0].function_name : ""
+}
+
+output "export_pdf_ecr_repository_url" {
+  value = var.create_http_api ? aws_ecr_repository.export_pdf[0].repository_url : ""
+}
+
 output "api_endpoint" {
   value = var.create_http_api ? aws_apigatewayv2_api.main[0].api_endpoint : "https://api-${var.environment}.civil1.ai"
+}
+
+# ── M1-X2: LibreOffice DOCX→PDF converter (container Lambda) ─────────────────
+# Image URI starts as the public Python Lambda base so tofu can create the function
+# before scripts/deploy-export-pdf.sh pushes the real LO image. image_uri is ignored
+# on subsequent applies (same decoupling pattern as the zip API Lambda).
+
+resource "aws_ecr_repository" "export_pdf" {
+  count                = var.create_http_api ? 1 : 0
+  name                 = "${local.name_prefix}-export-pdf"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+data "aws_iam_policy_document" "export_pdf" {
+  count = var.create_http_api ? 1 : 0
+
+  statement {
+    sid    = "S3ExportArtifacts"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+    ]
+    resources = ["${var.app_bucket_arn}/*"]
+  }
+}
+
+resource "aws_iam_role" "export_pdf" {
+  count = var.create_http_api ? 1 : 0
+  name  = "${local.name_prefix}-export-pdf"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "export_pdf" {
+  count  = var.create_http_api ? 1 : 0
+  name   = "${local.name_prefix}-export-pdf"
+  role   = aws_iam_role.export_pdf[0].id
+  policy = data.aws_iam_policy_document.export_pdf[0].json
+}
+
+resource "aws_iam_role_policy_attachment" "export_pdf_basic" {
+  count      = var.create_http_api ? 1 : 0
+  role       = aws_iam_role.export_pdf[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_lambda_function" "export_pdf" {
+  count = var.create_http_api ? 1 : 0
+
+  function_name = "${local.name_prefix}-export-pdf"
+  role          = aws_iam_role.export_pdf[0].arn
+  package_type  = "Image"
+  # Real LibreOffice image is pushed by scripts/deploy-export-pdf.sh. Until the first
+  # push, create the function only after :latest exists in ECR (see deploy order in README).
+  image_uri     = "${aws_ecr_repository.export_pdf[0].repository_url}:latest"
+  architectures = ["arm64"]
+  memory_size   = 3008
+  timeout       = 120
+
+  environment {
+    variables = {
+      CIVILAI_APP_BUCKET = replace(var.app_bucket_arn, "arn:aws:s3:::", "")
+      HOME               = "/tmp"
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [image_uri]
+  }
 }

@@ -4,6 +4,7 @@ from civilai_platform.models.entities import (
     AgentRun,
     AuditEvent,
     Client,
+    ExportJob,
     LlmBaselineTemplate,
     LlmInvokeJob,
     Project,
@@ -29,6 +30,7 @@ class MemoryStore(PlatformStore):
         self._audit: list[AuditEvent] = []
         self._platform_admins: set[str] = set()
         self._agent_runs: dict[tuple[str, str, str], AgentRun] = {}
+        self._export_jobs: dict[tuple[str, str, str], ExportJob] = {}
         self._llm_invoke_jobs: dict[tuple[str, str], LlmInvokeJob] = {}
         self._slug_index: dict[str, str] = {}
         self._llm_baseline: LlmBaselineTemplate | None = None
@@ -71,14 +73,13 @@ class MemoryStore(PlatformStore):
         for project in self.list_projects(tenant_id):
             self.delete_project(tenant_id, project.project_id)
         self._agent_runs = {
-            key: run
-            for key, run in self._agent_runs.items()
-            if key[0] != tenant_id
+            key: run for key, run in self._agent_runs.items() if key[0] != tenant_id
+        }
+        self._export_jobs = {
+            key: job for key, job in self._export_jobs.items() if key[0] != tenant_id
         }
         self._llm_invoke_jobs = {
-            key: job
-            for key, job in self._llm_invoke_jobs.items()
-            if key[0] != tenant_id
+            key: job for key, job in self._llm_invoke_jobs.items() if key[0] != tenant_id
         }
         self._audit = [event for event in self._audit if event.tenant_id != tenant_id]
         self.delete_tenant(tenant_id)
@@ -151,6 +152,9 @@ class MemoryStore(PlatformStore):
     def delete_project(self, tenant_id: str, project_id: str) -> None:
         self._projects.pop((tenant_id, project_id), None)
         self._states.pop((tenant_id, project_id), None)
+        self._export_jobs = {
+            key: job for key, job in self._export_jobs.items() if key[:2] != (tenant_id, project_id)
+        }
         self._project_activity = {
             key: event
             for key, event in self._project_activity.items()
@@ -220,6 +224,12 @@ class MemoryStore(PlatformStore):
         ]
         runs.sort(key=lambda r: r.created_at, reverse=True)
         return runs[:limit]
+
+    def put_export_job(self, job: ExportJob) -> None:
+        self._export_jobs[(job.tenant_id, job.project_id, job.job_id)] = job
+
+    def get_export_job(self, tenant_id: str, project_id: str, job_id: str) -> ExportJob | None:
+        return self._export_jobs.get((tenant_id, project_id, job_id))
 
     def put_llm_invoke_job(self, job: LlmInvokeJob) -> None:
         self._llm_invoke_jobs[(job.tenant_id, job.job_id)] = job

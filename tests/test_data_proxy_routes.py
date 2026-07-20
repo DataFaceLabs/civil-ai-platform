@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from civilai_platform.app import create_app
 from civilai_platform.store import get_store
+from tests.conftest import bootstrap_client_user
 
 
 @pytest.fixture(autouse=True)
@@ -15,6 +16,8 @@ def _dev_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CIVILAI_STORE_BACKEND", "memory")
     monkeypatch.setenv("CIVILAI_ARTIFACT_BACKEND", "memory")
     monkeypatch.setenv("CIVILAI_DATA_API_BASE", "http://data.test")
+    monkeypatch.delenv("CIVILAI_DEV_DATA_API_BASE", raising=False)
+    monkeypatch.delenv("CIVILAI_DEV_DATA_ORIGINS", raising=False)
     get_store.cache_clear()
 
 
@@ -29,10 +32,6 @@ def _headers(user_id: str, tenant_id: str | None = None) -> dict[str, str]:
     if tenant_id:
         h["X-Tenant-Id"] = tenant_id
     return h
-
-
-from civilai_platform.store import get_store
-from tests.conftest import bootstrap_client_user
 
 
 def _bootstrap(client: TestClient, user_id: str) -> str:
@@ -147,9 +146,12 @@ def test_resolve_body_has_no_pii_scope_field() -> None:
 
 def test_data_proxy_dependency_never_requests_pii() -> None:
     """The route-level DataProxyClient factory must not opt into PII scope."""
+    from starlette.requests import Request
+
     from civilai_platform.api.routes.data_proxy import get_data_proxy
 
-    client = get_data_proxy()
+    request = Request({"type": "http", "headers": []})
+    client = get_data_proxy(request)
     assert client.include_pii is False
 
 
@@ -184,6 +186,30 @@ def test_passthrough_get_forwards_with_service_key(client: TestClient) -> None:
     # Service key injected server-side; PII scope never requested.
     sent = route.calls.last.request
     assert "X-Data-Scopes" not in sent.headers
+
+
+@respx.mock
+def test_passthrough_routes_allowlisted_develop_origin_to_dev_data(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CIVILAI_DEV_DATA_API_BASE", "http://dev-data.test")
+    monkeypatch.setenv("CIVILAI_DEV_DATA_ORIGINS", "https://develop.example.com")
+    tenant_id = _bootstrap(client, "user-dev")
+    route = respx.get("http://dev-data.test/v1/sections/flood/facts/ent-1").mock(
+        return_value=httpx.Response(200, json={"entity_id": "ent-1", "plane": "dev"})
+    )
+
+    res = client.get(
+        "/v1/data-proxy/passthrough/sections/flood/facts/ent-1",
+        headers={
+            **_headers("user-dev", tenant_id),
+            "Origin": "https://develop.example.com",
+        },
+    )
+
+    assert res.status_code == 200
+    assert res.json()["plane"] == "dev"
+    assert route.called
 
 
 @respx.mock

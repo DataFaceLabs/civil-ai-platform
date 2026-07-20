@@ -46,6 +46,12 @@ class AgentRunStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ExportJobStatus(StrEnum):
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 class LlmInvokeJobStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
@@ -74,6 +80,10 @@ class Tenant(BaseModel):
     phone: str = ""
     fax: str = ""
     logo_s3_key: str | None = None
+    # Presentation skin for server-rendered studies. None deliberately resolves through
+    # the export skin registry so the platform can change its default without migrating
+    # every tenant record.
+    export_skin: str | None = None
     status: TenantStatus = TenantStatus.ACTIVE
     feature_flags: dict[str, bool] = Field(default_factory=dict)
     enabled_data_sources: list[str] = Field(default_factory=list)
@@ -219,6 +229,7 @@ class MapExhibit(BaseModel):
     # Legacy fixed-slot identifier. User-named exhibits created by the current FE
     # omit it, so it must be optional or state saves that include a new exhibit fail.
     slot: str | None = None
+    label: str | None = None
     name: str
     size: int
     mime_type: str | None = None
@@ -303,6 +314,24 @@ class AgentRun(BaseModel):
     guardrail_warnings: list[str] = Field(default_factory=list)
     error: str | None = None
     s3_prefix: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+
+class ExportJob(BaseModel):
+    job_id: str
+    tenant_id: str
+    project_id: str
+    actor_user_id: str
+    status: ExportJobStatus = ExportJobStatus.RUNNING
+    skin_id: str
+    data_api_base: str | None = None
+    docx_s3_key: str | None = None
+    pdf_s3_key: str | None = None
+    findings: list[dict[str, str]] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None = None
