@@ -1,21 +1,28 @@
-"""Post-render DOCX polish for export skins (Civil1 presentation defects).
+"""Post-render DOCX polish for export skins (Civil1 / ATX presentation defects).
 
-Strips placeholder-only paragraphs and empty recommendation/exhibit table rows that
-otherwise become walls of "Not available..." in DOCX/PDF. Headings are kept so the
-per-skin outline linter still matches.
+Strips placeholder-only paragraphs, mid-sentence missing sentinels, and empty
+recommendation/exhibit table rows that otherwise become walls of
+"Not available..." in DOCX/PDF. Headings are kept so the per-skin outline linter
+still matches.
 """
 
 from __future__ import annotations
 
+import re
 from io import BytesIO
 
 import docx
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from civilai_platform.services.export.context import _MISSING
+from civilai_platform.services.export.context import _MISSING, _PENDING_PLACEHOLDER
 
 _MISSING_TEXT = _MISSING
+_PENDING_TEXT = _PENDING_PLACEHOLDER
+_PLACEHOLDER_RE = re.compile(
+    re.escape(_MISSING_TEXT) + "|" + re.escape(_PENDING_TEXT),
+    re.IGNORECASE,
+)
 
 
 def _paragraph_text(paragraph: Paragraph) -> str:
@@ -32,7 +39,29 @@ def _is_heading(paragraph: Paragraph) -> bool:
 
 
 def _is_missing_only(text: str) -> bool:
-    return text == _MISSING_TEXT
+    cleaned = text.strip()
+    return cleaned == _MISSING_TEXT or cleaned.casefold() == _PENDING_TEXT.casefold()
+
+
+def _scrub_placeholders(text: str) -> str:
+    """Remove missing/pending sentinels and tidy leftover punctuation."""
+    cleaned = _PLACEHOLDER_RE.sub("", text)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+\.", ".", cleaned)
+    cleaned = re.sub(r"\.\.+", ".", cleaned)
+    cleaned = re.sub(r"\s+,", ",", cleaned)
+    cleaned = re.sub(r",\s*,", ",", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip(" \t,;:")
+
+
+def _set_paragraph_text(paragraph: Paragraph, text: str) -> None:
+    if not paragraph.runs:
+        paragraph.add_run(text)
+        return
+    paragraph.runs[0].text = text
+    for run in paragraph.runs[1:]:
+        run.text = ""
 
 
 def _remove_paragraph(paragraph: Paragraph) -> None:
@@ -58,14 +87,27 @@ def polish_export_docx(payload: bytes) -> bytes:
             if len(cells) < 2:
                 continue
             value = cells[-1].text.strip()
-            if not value or _is_missing_only(value):
+            scrubbed = _scrub_placeholders(value)
+            if not scrubbed or _is_missing_only(value):
                 _remove_table_row(table, row_index)
+            elif scrubbed != value:
+                cells[-1].text = scrubbed
 
-    # 2) Drop paragraphs that are only the missing sentinel.
+    # 2) Scrub mid-sentence placeholders; drop paragraphs that are only sentinel.
     for paragraph in list(document.paragraphs):
+        if _is_heading(paragraph):
+            continue
         text = _paragraph_text(paragraph)
+        if not text:
+            continue
         if _is_missing_only(text):
             _remove_paragraph(paragraph)
+            continue
+        scrubbed = _scrub_placeholders(text)
+        if not scrubbed:
+            _remove_paragraph(paragraph)
+        elif scrubbed != text:
+            _set_paragraph_text(paragraph, scrubbed)
 
     # 3) Collapse runs of blank paragraphs (keep at most one spacer).
     previous_blank = False
