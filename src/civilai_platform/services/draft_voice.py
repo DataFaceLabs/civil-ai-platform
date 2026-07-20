@@ -10,11 +10,11 @@ import re
 
 # Appended to every section-draft system prompt (platform resolve + agent renderer).
 DRAFT_VOICE_DIRECTIVE = """
-Draft voice (ACE house style — always apply):
-- Write short paragraphs: typically 1–3 sentences each. Prefer blank-line breaks between paragraphs in markdown.
+Draft voice (ACE house style - always apply):
+- Write short paragraphs: typically 1-3 sentences each. Prefer blank-line breaks between paragraphs in markdown.
 - One topic per subsection or paragraph cluster; do not dump every field into a single wall of text.
 - Paraphrase governed field values into professional engineering prose. Never paste multi-topic Compose/field dumps verbatim.
-- Do not invent "(See Exhibit: …)" callouts. Only cite an exhibit when AVAILABLE_EXHIBITS (or an equivalent project exhibit list) names that sheet/map, or when a governed citation clearly identifies it.
+- Do not invent "(See Exhibit: ...)" callouts. Only cite an exhibit when AVAILABLE_EXHIBITS (or an equivalent project exhibit list) names that sheet/map, or when a governed citation clearly identifies it.
 - Never invent permits, capacities, will-serve commitments, or unstated regulatory conclusions.
 - Replace robotic stems such as "rule extraction pending" or "Pending user input." with an honest verification gap (what is unknown and who to confirm with).
 """.strip()
@@ -66,12 +66,12 @@ def draft_voice_user_reminder(*, has_exhibits: bool) -> str:
     """Short user-prompt reminder so pipeline format_directive paths also see the rules."""
     if has_exhibits:
         return (
-            "Voice reminder: short paragraphs; paraphrase fields; cite (See Exhibit: …) only "
+            "Voice reminder: short paragraphs; paraphrase fields; cite (See Exhibit: ...) only "
             "for names listed in AVAILABLE_EXHIBITS."
         )
     return (
         "Voice reminder: short paragraphs; paraphrase fields; do not invent "
-        "(See Exhibit: …) callouts — no exhibits are listed for this project."
+        "(See Exhibit: ...) callouts - no exhibits are listed for this project."
     )
 
 
