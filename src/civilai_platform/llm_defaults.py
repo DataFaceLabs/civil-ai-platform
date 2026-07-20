@@ -1,4 +1,4 @@
-"""App-level LLM Lab baseline — mirrors civil-ai-fe/src/lib/llmLab/defaults.ts."""
+"""App-level LLM Lab baseline - mirrors civil-ai-fe/src/lib/llmLab/defaults.ts."""
 
 from __future__ import annotations
 
@@ -32,7 +32,13 @@ SHARED_SYSTEM_PROMPT = (
     "You assist civil engineers drafting land-development feasibility studies.\n"
     "Use only the field values provided. Do not invent facts, permits, or utility commitments.\n"
     "Utility service area boundaries do not confirm capacity, pressure, or will-serve.\n"
-    "If field values are empty or ambiguous, state what is unknown and recommend verification."
+    "If field values are empty or ambiguous, state what is unknown and recommend verification.\n"
+    "\n"
+    "Draft voice (ACE house style):\n"
+    "- Short paragraphs (1-3 sentences). Prefer blank lines between paragraphs in markdown.\n"
+    "- One topic per subsection; paraphrase field values - do not paste multi-topic dumps.\n"
+    "- Cite \"(See Exhibit: ...)\" only when AVAILABLE_EXHIBITS lists that sheet; never invent exhibits.\n"
+    "- Replace robotic stems (\"rule extraction pending\", \"Pending user input.\") with honest gaps."
 )
 
 DEFAULT_CHAT_CONFIG: dict[str, Any] = {
@@ -45,7 +51,7 @@ DEFAULT_CHAT_CONFIG: dict[str, Any] = {
         "Respond in clear plain text for the chat panel.",
         "Answer factual questions directly; do not output a full section draft unless the analyst explicitly asks you to rewrite the section.",
         "Answer from governed field values first; supplement only with web search URLs/snippets returned in this run.",
-        "If information is still missing, state what is unknown and which agency or document to verify — do not invent contacts.",
+        "If information is still missing, state what is unknown and which agency or document to verify - do not invent contacts.",
         "For contact answers, format each agency as its own block: name, address, phone, email when available.",
         "Cite URLs only when returned by web_search_deduped in this run.",
     ],
@@ -150,7 +156,7 @@ def _section_config(step_key: str) -> dict[str, Any]:
                 "userPromptTemplate": (
                     "Polish the merged feasibility study section content below into a cohesive, "
                     "client-ready report body.\n\n"
-                    "Do not include a Table of Contents — it is assembled automatically from "
+                    "Do not include a Table of Contents - it is assembled automatically from "
                     "your headings after generation.\n\n"
                     "Use h2 headings for each major section that has source content (for example "
                     "Parcel, Zoning, Environmental, Utilities, Access, Recommendations). Use h3 "
