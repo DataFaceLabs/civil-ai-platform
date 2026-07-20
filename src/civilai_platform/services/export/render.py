@@ -9,7 +9,9 @@ from io import BytesIO
 from typing import Any
 
 import docx
-from docx.shared import Inches
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Inches, Pt
 from docxcompose.composer import Composer  # type: ignore[import-untyped]
 from docxtpl import DocxTemplate, InlineImage  # type: ignore[import-untyped]
 
@@ -20,24 +22,88 @@ from civilai_platform.services.export.polish import polish_export_docx
 from civilai_platform.services.export.skins import Skin
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z(\"'])")
+
+# Mega-paragraph safety net: gold ACE studies use short body paras (~2–3 sentences).
+_REFLOW_MIN_CHARS = 350
+_REFLOW_MIN_SENTENCES = 3
+_REFLOW_SENTENCES_PER_PARA = 2
+
+# Per-skin body font for Subdoc narration (must match template / builder).
+_SKIN_BODY_FONT: dict[str, str] = {
+    "atxcivil_v1": "Calisto MT",
+    "civil1_study_v1": "Source Sans 3",
+}
+_DEFAULT_BODY_FONT = "Calisto MT"
+_BODY_FONT_SIZE = Pt(11)
 
 
-def _narration_subdoc(template: DocxTemplate, text: str) -> Any:
-    """Convert the editor's paragraph/bold subset into real Word paragraphs."""
+def _reflow_mega_chunk(chunk: str) -> list[str]:
+    """Split a wall-of-text chunk into short paragraphs at sentence boundaries."""
+    stripped = chunk.strip()
+    if len(stripped) < _REFLOW_MIN_CHARS:
+        return [stripped]
+    sentences = [s.strip() for s in _SENTENCE_RE.split(stripped) if s.strip()]
+    if len(sentences) < _REFLOW_MIN_SENTENCES:
+        return [stripped]
+    paras: list[str] = []
+    for index in range(0, len(sentences), _REFLOW_SENTENCES_PER_PARA):
+        group = sentences[index : index + _REFLOW_SENTENCES_PER_PARA]
+        paras.append(" ".join(group))
+    return paras
+
+
+def _set_run_font(run: Any, font_name: str) -> None:
+    run.font.name = font_name
+    run.font.size = _BODY_FONT_SIZE
+    rpr = run._element.get_or_add_rPr()
+    fonts = rpr.find(qn("w:rFonts"))
+    if fonts is None:
+        fonts = OxmlElement("w:rFonts")
+        rpr.append(fonts)
+    for attr in ("w:ascii", "w:hAnsi", "w:cs", "w:eastAsia"):
+        fonts.set(qn(attr), font_name)
+
+
+def _add_runs_with_bold(paragraph: Any, chunk: str, font_name: str) -> None:
+    pos = 0
+    for match in _BOLD_RE.finditer(chunk):
+        if match.start() > pos:
+            run = paragraph.add_run(chunk[pos : match.start()])
+            _set_run_font(run, font_name)
+        bold_run = paragraph.add_run(match.group(1))
+        bold_run.bold = True
+        _set_run_font(bold_run, font_name)
+        pos = match.end()
+    if pos < len(chunk):
+        run = paragraph.add_run(chunk[pos:])
+        _set_run_font(run, font_name)
+
+
+def _narration_subdoc(
+    template: DocxTemplate,
+    text: str,
+    *,
+    body_font: str = _DEFAULT_BODY_FONT,
+) -> Any:
+    """Convert the editor's paragraph/bold subset into real Word paragraphs.
+
+    Splits on blank lines (from TipTap ``<p>`` → ``\\n\\n``). Mega single-``<p>``
+    walls are reflowed at sentence boundaries. Runs are pinned to the skin body font
+    so Subdocs do not fall back to Arial docDefaults.
+    """
     subdoc = template.new_subdoc()
     for chunk in re.split(r"\n\s*\n", text):
         chunk = chunk.strip()
         if not chunk:
             continue
-        paragraph = subdoc.add_paragraph()
-        pos = 0
-        for match in _BOLD_RE.finditer(chunk):
-            if match.start() > pos:
-                paragraph.add_run(chunk[pos : match.start()])
-            paragraph.add_run(match.group(1)).bold = True
-            pos = match.end()
-        if pos < len(chunk):
-            paragraph.add_run(chunk[pos:])
+        for piece in _reflow_mega_chunk(chunk):
+            paragraph = subdoc.add_paragraph()
+            try:
+                paragraph.style = "Normal"
+            except KeyError:
+                pass
+            _add_runs_with_bold(paragraph, piece, body_font)
     return subdoc
 
 
@@ -130,11 +196,12 @@ def render_docx(context: ExportContext, skin: Skin) -> bytes:
     render_values: dict[str, Any] = dict(context.template_values)
     render_values["customer_logo"] = _customer_logo(template, context.customer_logo)
     render_values["cover_aerial"] = _cover_aerial(template, context.exhibits)
+    body_font = _SKIN_BODY_FONT.get(skin.id, _DEFAULT_BODY_FONT)
     for token in skin.narration_tokens:
         text = (context.narration.get(token) or "").strip()
         if not text:
             text = "Not available from current project data."
-        render_values[token] = _narration_subdoc(template, text)
+        render_values[token] = _narration_subdoc(template, text, body_font=body_font)
 
     # StrictUndefined would turn optional, intentionally unfilled tenant fields into
     # failures. Instead, ensure every declared template variable has an honest value so
