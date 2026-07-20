@@ -107,6 +107,32 @@ def _set_style_font(document: docx.document.Document, style_name: str, font_name
         fonts.set(qn(attr), font_name)
 
 
+def _set_doc_defaults_font(document: docx.document.Document, font_name: str) -> None:
+    """Pin w:docDefaults so Subdocs / unset runs inherit Calisto, not Arial."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    styles = document.styles.element
+    doc_defaults = styles.find(qn("w:docDefaults"))
+    if doc_defaults is None:
+        doc_defaults = OxmlElement("w:docDefaults")
+        styles.insert(0, doc_defaults)
+    rpr_default = doc_defaults.find(qn("w:rPrDefault"))
+    if rpr_default is None:
+        rpr_default = OxmlElement("w:rPrDefault")
+        doc_defaults.insert(0, rpr_default)
+    rpr = rpr_default.find(qn("w:rPr"))
+    if rpr is None:
+        rpr = OxmlElement("w:rPr")
+        rpr_default.append(rpr)
+    fonts = rpr.find(qn("w:rFonts"))
+    if fonts is None:
+        fonts = OxmlElement("w:rFonts")
+        rpr.insert(0, fonts)
+    for attr in ("w:ascii", "w:hAnsi", "w:cs", "w:eastAsia"):
+        fonts.set(qn(attr), font_name)
+
+
 def fidelity_pass(document: docx.document.Document, logo_bytes: bytes | None) -> None:
     """Reshape the converted file to match ACE's *delivered* reports, not the raw
     template skeleton (corpus: client-data/feasibility-studies/*.pdf).
@@ -116,8 +142,8 @@ def fidelity_pass(document: docx.document.Document, logo_bytes: bytes | None) ->
     2. Cover aerial: the literal "![LOGO/IMAGE]" line becomes `{{ cover_aerial }}`.
     3. Cover block: centered, and cover titles leave the Heading-1 outline so the
        linter's heading-sequence check sees only the numbered body outline.
-    4. Fonts: pin Normal + headings to Calisto MT (embedded in their delivered PDFs;
-       the raw template fell back to Arial docDefaults).
+    4. Fonts: pin Normal + Subtitle + headings + docDefaults to Calisto MT (embedded in
+       their delivered PDFs; the raw template fell back to Arial docDefaults / Subtitle).
     5. Page break after the client block so the cover stands alone.
     """
     if logo_bytes:
@@ -164,7 +190,8 @@ def fidelity_pass(document: docx.document.Document, logo_bytes: bytes | None) ->
             if (paragraph.style.name or "").startswith("Heading"):
                 paragraph.style = document.styles["Title"]
 
-    for style_name in ("Normal", "Heading 1", "Heading 2", "Heading 3", "Title"):
+    _set_doc_defaults_font(document, BODY_FONT)
+    for style_name in ("Normal", "Subtitle", "Heading 1", "Heading 2", "Heading 3", "Title"):
         try:
             _set_style_font(document, style_name, BODY_FONT)
         except KeyError:
