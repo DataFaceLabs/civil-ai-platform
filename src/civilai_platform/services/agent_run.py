@@ -180,7 +180,11 @@ def _build_context_payload(
     tenant = store.get_tenant(tenant_id)
     project = store.get_project(tenant_id, project_id)
     resolved_entity_id = entity_id or _entity_id_from_state(store, tenant_id, project_id)
-    resolved_field_context = field_context or {}
+    resolved_field_context = dict(field_context or {})
+    # Canonical spoken address = project.address (covers multi-situs same entity).
+    canonical = (project.address or "").strip() if project else ""
+    if canonical:
+        resolved_field_context["PROPERTY_ADDRESS"] = canonical
     chat_system_prompt, chat_instructions = resolve_chat_prompts(tenant_llm)
     request = request_text
     system_prompt = ""
