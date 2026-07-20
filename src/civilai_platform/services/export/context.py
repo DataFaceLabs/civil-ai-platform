@@ -65,21 +65,39 @@ def _is_pending_or_empty(text: str) -> bool:
 
 
 class _PlainTextParser(HTMLParser):
-    _BLOCKS = {"p", "div", "br", "li", "h1", "h2", "h3", "h4", "blockquote"}
+    """TipTap HTML → plain text with blank-line paragraph breaks.
+
+    Adjacent ``</p><p>`` must become ``\\n\\n`` so ``_narration_subdoc`` can split
+    into real Word paragraphs (a single ``\\n`` collapses into one blob).
+    """
+
+    _PARA_BLOCKS = {"p", "div", "li", "h1", "h2", "h3", "h4", "blockquote"}
+    _BOLD = {"strong", "b"}
 
     def __init__(self) -> None:
         super().__init__()
         self.parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in self._BLOCKS and self.parts and not self.parts[-1].endswith("\n"):
+        if tag == "br":
+            self.parts.append("\n")
+            return
+        if tag in self._PARA_BLOCKS and self.parts and not self.parts[-1].endswith("\n"):
             self.parts.append("\n")
         if tag == "li":
             self.parts.append("• ")
+        if tag in self._BOLD:
+            self.parts.append("**")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in self._BLOCKS:
-            self.parts.append("\n")
+        if tag in self._BOLD:
+            self.parts.append("**")
+            return
+        if tag == "br":
+            return
+        if tag in self._PARA_BLOCKS:
+            # Blank line so Subdoc split sees a paragraph boundary.
+            self.parts.append("\n\n")
 
     def handle_data(self, data: str) -> None:
         self.parts.append(data)
