@@ -50,7 +50,8 @@ def test_polish_strips_missing_paragraphs_keeps_outline() -> None:
     out = docx.Document(BytesIO(polished))
     texts = [p.text.strip() for p in out.paragraphs if p.text.strip()]
     assert _MISSING not in texts
-    assert "3.2 Platting & Subdivision" in texts
+    # Empty leaf heading (only MISSING body) is collapsed; next section kept.
+    assert "3.2 Platting & Subdivision" not in texts
     assert "3.3 Compatibility" in texts
     assert "Compatibility standards apply near residential uses." in texts
 
