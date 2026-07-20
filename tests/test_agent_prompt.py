@@ -57,9 +57,12 @@ def test_resolve_section_prompt_uses_prompt_lab_config(monkeypatch) -> None:
         user_guidance="Keep it concise.",
     )
 
-    assert resolved.system_prompt == "Write as a cautious civil engineer."
+    assert "Write as a cautious civil engineer." in resolved.system_prompt
+    assert "Draft voice (ACE house style" in resolved.system_prompt
     assert "District: MF-4" in resolved.rendered_prompt
     assert "Additional guidance:\nKeep it concise." in resolved.rendered_prompt
+    assert "Voice reminder:" in resolved.rendered_prompt
+    assert "do not invent" in resolved.rendered_prompt.lower()
     assert resolved.model_preset == "sonnet46"
     assert resolved.model_id == "us.anthropic.claude-sonnet-4-6"
     assert resolved.temperature == 0.1
@@ -94,3 +97,34 @@ def test_refine_prompt_includes_current_draft_and_analyst_request() -> None:
     assert "Current draft:\nAustin Water may serve the site." in resolved.rendered_prompt
     assert "Governed field values are unchanged" in resolved.rendered_prompt
     assert "Analyst request:\nAdd the wastewater caveat." in resolved.rendered_prompt
+
+
+def test_compose_scrubs_robotic_stems_from_field_values() -> None:
+    prompt = compose_section_template(
+        "Zoning: {{field.ZONING_REGS}}",
+        field_context={"ZONING_REGS": "GR-MU-V. rule extraction pending."},
+        input_field_codes=["ZONING_REGS"],
+    )
+    assert "GR-MU-V" in prompt
+    assert "rule extraction pending" not in prompt.lower()
+
+
+def test_resolve_allows_exhibit_callouts_when_listed() -> None:
+    resolved = resolve_section_agent_prompt(
+        {
+            "modelPreset": "haiku",
+            "sectionSystemPrompt": "System",
+            "sections": {
+                "zoning": {
+                    "userPromptTemplate": "Draft zoning.",
+                    "inputFieldCodes": [],
+                    "guardrails": {},
+                }
+            },
+        },
+        config_version=1,
+        section_id="zoning",
+        field_context={"AVAILABLE_EXHIBITS": "Zoning Map; Floodplain"},
+    )
+    assert "AVAILABLE_EXHIBITS" in resolved.rendered_prompt
+    assert "names listed in AVAILABLE_EXHIBITS" in resolved.rendered_prompt
