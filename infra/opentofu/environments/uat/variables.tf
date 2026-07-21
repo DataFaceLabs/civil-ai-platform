@@ -83,6 +83,13 @@ variable "mapbox_access_token" {
   default   = ""
 }
 
+variable "tavily_api_key" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "Tavily API key for platform agent web search (SSM + Lambda CIVILAI_TAVILY_API_KEY)."
+}
+
 variable "cors_origins" {
   type = list(string)
   # Used by the data-API EC2 CORSMiddleware *and* S3 bucket CORS for

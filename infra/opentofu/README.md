@@ -9,7 +9,7 @@ OpenTofu manages **all** UAT AWS resources for the product stack:
 | `modules/cognito` | User pool, app client, hosted UI domain |
 | `modules/dynamodb` | `civilai-app-{env}` single-table store |
 | `modules/s3` | `civilai-app-{env}` artifacts bucket (platform exports) |
-| `modules/secrets` | SSM: `data-service-key`, Mapbox token |
+| `modules/secrets` | SSM: `data-service-key`, Mapbox token, Tavily API key |
 | `modules/api-gateway` | Lambda IAM + **HTTP API** + Cognito JWT authorizer |
 | `modules/bedrock` | Invoke policy for Lambda |
 | `modules/amplify-hosting` | Amplify app + `develop` branch + FE env vars |
@@ -40,7 +40,10 @@ tofu init && tofu apply
 ```bash
 cd ../environments/uat
 cp terraform.tfvars.example terraform.tfvars
-# Edit: allowed_ssh_cidr_blocks, mapbox_access_token, github_access_token, cognito URLs
+# Edit: allowed_ssh_cidr_blocks, mapbox_access_token, tavily_api_key,
+#       github_access_token, cognito URLs
+# Keep tavily_api_key set in terraform.tfvars — an apply with it empty
+# removes CIVILAI_TAVILY_API_KEY from the platform Lambda.
 
 # Platform Lambda zip (when create_platform_http_api=true)
 cd ../../.. && bash scripts/package-lambda.sh && cd infra/opentofu/environments/uat
