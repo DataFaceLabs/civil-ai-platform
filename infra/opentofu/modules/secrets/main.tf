@@ -15,6 +15,13 @@ variable "github_access_token" {
   description = "GitHub PAT for EC2 clone of private civil-ai-data repo."
 }
 
+variable "tavily_api_key" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "Tavily API key for agent web search (platform Lambda CIVILAI_TAVILY_API_KEY)."
+}
+
 resource "random_password" "data_service_key" {
   length  = 48
   special = false
@@ -91,4 +98,25 @@ resource "aws_ssm_parameter" "github_access_token" {
 
 output "github_token_parameter_name" {
   value = length(aws_ssm_parameter.github_access_token) > 0 ? aws_ssm_parameter.github_access_token[0].name : ""
+}
+
+resource "aws_ssm_parameter" "tavily_api_key" {
+  count = var.tavily_api_key != "" ? 1 : 0
+  name  = "/civilai/${var.environment}/tavily-api-key"
+  type  = "SecureString"
+  value = var.tavily_api_key
+
+  tags = {
+    Environment = var.environment
+    Service     = "platform-api"
+  }
+}
+
+output "tavily_api_key_parameter_name" {
+  value = length(aws_ssm_parameter.tavily_api_key) > 0 ? aws_ssm_parameter.tavily_api_key[0].name : ""
+}
+
+output "tavily_api_key" {
+  value     = var.tavily_api_key
+  sensitive = true
 }

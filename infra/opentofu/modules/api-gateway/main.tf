@@ -68,6 +68,13 @@ variable "data_service_key" {
   sensitive = true
 }
 
+variable "tavily_api_key" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "Tavily API key for agent web search. Empty leaves CIVILAI_TAVILY_API_KEY unset."
+}
+
 variable "create_http_api" {
   type    = bool
   default = false
@@ -237,43 +244,49 @@ resource "aws_lambda_function" "platform" {
   }
 
   environment {
-    variables = {
-      CIVILAI_ENVIRONMENT           = var.environment
-      CIVILAI_DEV_AUTH              = var.dev_auth ? "true" : "false"
-      CIVILAI_STORE_BACKEND         = "dynamodb"
-      CIVILAI_DYNAMODB_TABLE        = "civilai-app-${var.environment}"
-      CIVILAI_ARTIFACT_BACKEND      = "s3"
-      CIVILAI_APP_BUCKET            = replace(var.app_bucket_arn, "arn:aws:s3:::", "")
-      CIVILAI_AGENT_CORPUS_BUCKET   = var.agent_corpus_bucket
-      CIVILAI_DATA_API_BASE         = var.data_api_base_url
-      CIVILAI_DEV_DATA_API_BASE     = var.dev_data_api_base_url
-      CIVILAI_DEV_DATA_ORIGINS      = join(",", var.dev_data_origins)
-      CIVILAI_DATA_SERVICE_KEY      = var.data_service_key
-      CIVILAI_COGNITO_USER_POOL_ID  = var.cognito_user_pool_id
-      CIVILAI_COGNITO_APP_CLIENT_ID = var.cognito_client_id
-      # Live Strands agent (false). Local tests / e2e-platform.sh override to true.
-      CIVILAI_AGENT_DRY_RUN = "false"
-      # Return HTTP immediately for agent-runs and tenant LLM invoke; complete via
-      # Lambda Event self-invoke (API Gateway ~29s sync cap). Also read as
-      # CIVILAI_LLM_ASYNC default by llm_invoke.llm_invoke_async_enabled().
-      CIVILAI_AGENT_ASYNC = "true"
-      # DOCX generation and BYO exhibit composition also run as a Lambda Event worker;
-      # the POST returns a pollable job before API Gateway's synchronous timeout.
-      CIVILAI_EXPORT_ASYNC = "true"
-      # LibreOffice DOCX→PDF converter (container Lambda). Empty until the export-pdf
-      # function exists; deploy-export-pdf.sh pushes the real image after tofu apply.
-      CIVILAI_EXPORT_PDF_FUNCTION = aws_lambda_function.export_pdf[0].function_name
-      # Section drafts use the deterministic fetch/dispatch/render pipeline instead of
-      # the legacy multi-turn Strands tool loop (keeps facts section-scoped, lower tokens).
-      CIVILAI_DRAFT_PIPELINE = "1"
-      # API Gateway's own cors_configuration below already scopes allow_origins to "*" at
-      # the edge; matching it here (rather than the app's localhost-only default) is what
-      # lets FastAPI's CORSMiddleware answer the OPTIONS preflight route (see
-      # aws_apigatewayv2_route.options_proxy) with a 2xx instead of a 400 "disallowed
-      # origin". Real authorization still comes from the Cognito JWT authorizer on every
-      # other route -- this only affects which script-origins may attempt a request.
-      CIVILAI_CORS_ORIGINS = "*"
-    }
+    variables = merge(
+      {
+        CIVILAI_ENVIRONMENT           = var.environment
+        CIVILAI_DEV_AUTH              = var.dev_auth ? "true" : "false"
+        CIVILAI_STORE_BACKEND         = "dynamodb"
+        CIVILAI_DYNAMODB_TABLE        = "civilai-app-${var.environment}"
+        CIVILAI_ARTIFACT_BACKEND      = "s3"
+        CIVILAI_APP_BUCKET            = replace(var.app_bucket_arn, "arn:aws:s3:::", "")
+        CIVILAI_AGENT_CORPUS_BUCKET   = var.agent_corpus_bucket
+        CIVILAI_DATA_API_BASE         = var.data_api_base_url
+        CIVILAI_DEV_DATA_API_BASE     = var.dev_data_api_base_url
+        CIVILAI_DEV_DATA_ORIGINS      = join(",", var.dev_data_origins)
+        CIVILAI_DATA_SERVICE_KEY      = var.data_service_key
+        CIVILAI_COGNITO_USER_POOL_ID  = var.cognito_user_pool_id
+        CIVILAI_COGNITO_APP_CLIENT_ID = var.cognito_client_id
+        # Live Strands agent (false). Local tests / e2e-platform.sh override to true.
+        CIVILAI_AGENT_DRY_RUN = "false"
+        # Return HTTP immediately for agent-runs and tenant LLM invoke; complete via
+        # Lambda Event self-invoke (API Gateway ~29s sync cap). Also read as
+        # CIVILAI_LLM_ASYNC default by llm_invoke.llm_invoke_async_enabled().
+        CIVILAI_AGENT_ASYNC = "true"
+        # DOCX generation and BYO exhibit composition also run as a Lambda Event worker;
+        # the POST returns a pollable job before API Gateway's synchronous timeout.
+        CIVILAI_EXPORT_ASYNC = "true"
+        # LibreOffice DOCX→PDF converter (container Lambda). Empty until the export-pdf
+        # function exists; deploy-export-pdf.sh pushes the real image after tofu apply.
+        CIVILAI_EXPORT_PDF_FUNCTION = aws_lambda_function.export_pdf[0].function_name
+        # Section drafts use the deterministic fetch/dispatch/render pipeline instead of
+        # the legacy multi-turn Strands tool loop (keeps facts section-scoped, lower tokens).
+        CIVILAI_DRAFT_PIPELINE = "1"
+        # API Gateway's own cors_configuration below already scopes allow_origins to "*" at
+        # the edge; matching it here (rather than the app's localhost-only default) is what
+        # lets FastAPI's CORSMiddleware answer the OPTIONS preflight route (see
+        # aws_apigatewayv2_route.options_proxy) with a 2xx instead of a 400 "disallowed
+        # origin". Real authorization still comes from the Cognito JWT authorizer on every
+        # other route -- this only affects which script-origins may attempt a request.
+        CIVILAI_CORS_ORIGINS = "*"
+      },
+      var.tavily_api_key != "" ? {
+        CIVILAI_WEB_SEARCH_PROVIDER = "tavily"
+        CIVILAI_TAVILY_API_KEY      = var.tavily_api_key
+      } : {},
+    )
   }
 }
 
