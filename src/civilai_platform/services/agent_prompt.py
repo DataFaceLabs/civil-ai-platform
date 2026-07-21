@@ -12,6 +12,11 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 from civilai_platform.model_presets import resolve_model_id
+from civilai_platform.services.draft_voice import (
+    apply_draft_voice_to_system_prompt,
+    draft_voice_user_reminder,
+    sanitize_field_value_for_draft,
+)
 from civilai_platform.services.search_policy import (
     substitute_search_hint_tokens,
     web_search_provider_configured,
@@ -52,25 +57,42 @@ def _remove_missing_token_line(prompt: str, code: str) -> str:
     return "\n".join(kept)
 
 
+def _sanitized_field(field_context: dict[str, str], code: str) -> str:
+    return sanitize_field_value_for_draft(_nonempty(field_context.get(code)))
+
+
 def compose_section_template(
     template: str,
     *,
     field_context: dict[str, str],
     input_field_codes: list[str] | tuple[str, ...],
 ) -> str:
-    """Render Prompt Lab field tokens using governed values supplied by the FE."""
+    """Render Prompt Lab field tokens using governed values supplied by the FE.
+
+    Field values are scrubbed of robotic Compose stems before substitution so the
+    model is not asked to echo "rule extraction pending" into section.body.
+    """
     codes = list(dict.fromkeys([*input_field_codes, *_FIELD_TOKEN.findall(template)]))
     prompt = template
     for code in codes:
-        if not _nonempty(field_context.get(code)):
+        if not _sanitized_field(field_context, code):
             prompt = _remove_missing_token_line(prompt, code)
-    prompt = _FIELD_TOKEN.sub(lambda match: _nonempty(field_context.get(match.group(1))), prompt)
+    prompt = _FIELD_TOKEN.sub(
+        lambda match: _sanitized_field(field_context, match.group(1)),
+        prompt,
+    )
     return re.sub(r"\n{3,}", "\n\n", prompt).strip()
 
 
 def _field_context_block(field_context: dict[str, str]) -> str:
     return "\n".join(
-        f"{code}: {value.strip()}" for code, value in sorted(field_context.items()) if value.strip()
+        f"{code}: {value}"
+        for code, value in sorted(
+            (code, sanitize_field_value_for_draft(raw.strip()))
+            for code, raw in field_context.items()
+            if raw.strip()
+        )
+        if value
     )
 
 
@@ -149,9 +171,13 @@ def resolve_section_agent_prompt(
         field_context=field_context,
         fields_unchanged=fields_unchanged,
     )
+    has_exhibits = bool(_sanitized_field(field_context, "AVAILABLE_EXHIBITS"))
+    reminder = draft_voice_user_reminder(has_exhibits=has_exhibits)
+    rendered_prompt = f"{rendered_prompt}\n\n{reminder}".strip() if rendered_prompt else reminder
 
-    system_prompt = _nonempty(tenant_cfg.get("sectionSystemPrompt")) or _nonempty(
-        section.get("systemPrompt")
+    system_prompt = apply_draft_voice_to_system_prompt(
+        _nonempty(tenant_cfg.get("sectionSystemPrompt"))
+        or _nonempty(section.get("systemPrompt"))
     )
     model_preset = (
         _nonempty(section.get("modelPreset")) or _nonempty(tenant_cfg.get("modelPreset")) or "haiku"
