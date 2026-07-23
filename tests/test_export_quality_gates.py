@@ -12,8 +12,11 @@ from civilai_platform.app import create_app
 from civilai_platform.services.export.context import (
     _MISSING,
     _PENDING_PLACEHOLDER,
+    _enrich_floodplain_narration,
+    _scrub_address_mash_from_narration,
     build_export_context,
     derive_recommendations,
+    editor_body_to_text,
     pin_narration_to_canonical_address,
 )
 from civilai_platform.services.export.polish import polish_export_docx
@@ -220,6 +223,11 @@ def test_polish_trappers_atx_presentation_defects() -> None:
     document.add_paragraph(
         "Access fronts **Lockwood Springs**, classified as a **local road**."
     )
+    document.add_paragraph("## Parcel Characteristics")
+    document.add_paragraph(
+        "The property exhibits modest relief across the tract."
+    )
+    document.add_paragraph("## Floodplain")
     document.add_heading("EXHIBITS", level=2)
     document.add_paragraph("List of Exhibits")
     empty_numbered = document.add_paragraph("")
@@ -245,7 +253,11 @@ def test_polish_trappers_atx_presentation_defects() -> None:
     assert "According to the maps and additional data the property." not in joined
     assert "See Exhibits" not in joined
     assert "**" not in joined
+    assert "##" not in joined
     assert "Lockwood Springs" in joined
+    assert "modest relief" in joined
+    assert "Parcel Characteristics" not in joined
+    assert "Floodplain" not in texts
     assert "List of Exhibits" not in texts
     # No orphan empty numbered paragraph left behind.
     for paragraph in out.paragraphs:
@@ -275,3 +287,42 @@ def test_linter_allows_outline_subsequence_after_polish() -> None:
     document.save(buf)
     findings = lint_docx(buf.getvalue(), get_skin("atxcivil_v1"))
     assert "heading_sequence" not in {f["check"] for f in findings}
+
+
+def test_editor_body_strips_markdown_heading_lines() -> None:
+    text = editor_body_to_text(
+        "## Parcel Characteristics\n\nThe tract slopes gently.\n\n## Floodplain\n\n"
+        "Mapped Zone X applies."
+    )
+    assert "##" not in text
+    assert "Parcel Characteristics" not in text
+    assert "Floodplain" not in text
+    assert "The tract slopes gently." in text
+    assert "Mapped Zone X applies." in text
+
+
+def test_scrub_address_mash_keeps_legitimate_situs_sentence() -> None:
+    address = "20401 TRAPPERS TRL, Manor, TX"
+    body = (
+        f"The site at {address} fronts Lockwood Springs Road.\n\n"
+        f"Contact Travis County Development Services, {address}, 512-854-7425 for permits."
+    )
+    cleaned = _scrub_address_mash_from_narration(body, address)
+    assert "fronts Lockwood Springs Road" in cleaned
+    assert address in cleaned  # kept in the situs sentence
+    assert "Development Services" in cleaned
+    # Mashed copy after the agency name should be gone.
+    assert f"Development Services, {address}" not in cleaned
+
+
+def test_enrich_floodplain_appends_firm_panel_once() -> None:
+    prose = "The tract is mapped Zone X outside the SFHA."
+    fields = {
+        "panel_id": "48453C0710J",
+        "effective_date": "2016-01-06T00:00:00",
+    }
+    once = _enrich_floodplain_narration(prose, fields)
+    assert "48453C0710J" in once
+    assert "2016-01-06" in once
+    twice = _enrich_floodplain_narration(once, fields)
+    assert twice.count("48453C0710J") == 1

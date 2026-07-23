@@ -103,16 +103,29 @@ class _PlainTextParser(HTMLParser):
         self.parts.append(data)
 
 
+_MD_BOLD_INLINE_RE = re.compile(r"\*\*(.+?)\*\*")
+_MD_HEADING_LINE_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+
+
+def _strip_markdown_headings(text: str) -> str:
+    """Remove leaked ``## Floodplain``-style labels; keep ``**bold**`` for Subdoc runs."""
+    if not text or "#" not in text:
+        return text
+    cleaned = _MD_HEADING_LINE_RE.sub("", text)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 def editor_body_to_text(value: str) -> str:
     """Turn TipTap HTML (or markdown-ish plain text) into paragraph-separated text."""
     if "<" not in value:
-        return value.strip()
+        return _strip_markdown_headings(value.strip())
     parser = _PlainTextParser()
     parser.feed(value)
     text = unescape("".join(parser.parts))
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    return _strip_markdown_headings(text.strip())
 
 
 def pin_narration_to_canonical_address(text: str, canonical: str) -> str:
@@ -247,6 +260,27 @@ def _scrub_site_address_from_contacts(contacts: str, property_address: str) -> s
     return contacts
 
 
+def _scrub_address_mash_from_narration(text: str, property_address: str) -> str:
+    """Remove project situs only when mashed into an agency/permit contact sentence."""
+    if not text or text == _MISSING or not property_address.strip():
+        return text
+    addr = property_address.strip()
+    agency = re.compile(
+        r"Development Services|Permit(?:ting)?\s+(?:Office|Contact)|County Clerk|"
+        r"will-serve|impact fee|512-\d{3}-\d{4}",
+        re.IGNORECASE,
+    )
+    paragraphs: list[str] = []
+    for paragraph in re.split(r"\n\s*\n", text):
+        if addr.casefold() not in paragraph.casefold() or not agency.search(paragraph):
+            paragraphs.append(paragraph)
+            continue
+        cleaned = _scrub_site_address_from_contacts(paragraph, property_address)
+        if cleaned and cleaned != _MISSING:
+            paragraphs.append(cleaned)
+    return "\n\n".join(paragraphs).strip()
+
+
 def _section_bodies(state: ProjectState, *, canonical_address: str) -> dict[str, str]:
     bodies: dict[str, str] = {}
     for section in state.sections:
@@ -254,10 +288,31 @@ def _section_bodies(state: ProjectState, *, canonical_address: str) -> dict[str,
         if _is_pending_or_empty(text):
             continue
         text = pin_narration_to_canonical_address(text, canonical_address)
+        text = _scrub_address_mash_from_narration(text, canonical_address)
         if text:
             bodies[section.step_key] = text
             bodies[section.id] = text
     return bodies
+
+
+def _enrich_floodplain_narration(text: str, fields: dict[str, str]) -> str:
+    """Append a FIRM panel citation when governed fields have it and prose omits it."""
+    if _is_pending_or_empty(text) or text == _MISSING:
+        return text
+    panel = _pick(fields, "panel_id", "PANEL_ID", "firm_panel", "FIRM_PANEL", default="")
+    if not panel or panel == _MISSING:
+        return text
+    if panel.casefold() in text.casefold():
+        return text
+    effective = _pick(
+        fields, "effective_date", "EFFECTIVE_DATE", "firm_effective_date", default=""
+    )
+    if effective and effective != _MISSING:
+        day = effective[:10] if re.match(r"^\d{4}-\d{2}-\d{2}", effective) else effective
+        citation = f"FEMA FIRM panel {panel} (effective {day})."
+    else:
+        citation = f"FEMA FIRM panel {panel}."
+    return f"{text.rstrip()} {citation}"
 
 
 def _split_labeled_body(text: str) -> dict[str, str]:
@@ -530,7 +585,9 @@ def build_export_context(
 
     narration = {
         "zoning_regs": bodies.get("zoning") or _MISSING,
-        "floodplain_status": bodies.get("environmental") or _MISSING,
+        "floodplain_status": _enrich_floodplain_narration(
+            bodies.get("environmental") or _MISSING, fields
+        ),
         "water_service": utilities.get("water_service") or bodies.get("utilities") or _MISSING,
         "wastewater_service": utilities.get("wastewater_service") or _MISSING,
         "electric_provider": utilities.get("electric_provider") or _MISSING,

@@ -36,8 +36,11 @@ SHARED_SYSTEM_PROMPT = (
     "\n"
     "Draft voice (ACE house style):\n"
     "- Short paragraphs (1-3 sentences). Prefer blank lines between paragraphs in markdown.\n"
+    "- Do not use markdown headings (# / ##) or **bold** markers; plain paragraphs only.\n"
     "- One topic per subsection; paraphrase field values - do not paste multi-topic dumps.\n"
     "- Cite \"(See Exhibit: ...)\" only when AVAILABLE_EXHIBITS lists that sheet; never invent exhibits.\n"
+    "- When flood fields include panel_id, cite the FEMA FIRM panel (and effective date if present).\n"
+    "- Do not mash the project site address into Development Services / permit contact sentences.\n"
     "- Replace robotic stems (\"rule extraction pending\", \"Pending user input.\") with honest gaps."
 )
 
