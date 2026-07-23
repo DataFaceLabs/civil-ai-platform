@@ -204,6 +204,111 @@ def test_civil1_skin_export_renders_clean(client: TestClient) -> None:
     assert "{{" not in full_text and "}}" not in full_text
 
 
+def test_atx_skin_export_trappers_presentation(client: TestClient) -> None:
+    """ATX skin: parcel id table, no invented exhibits, no markdown leaks."""
+    from civilai_platform.models.entities import FieldValue
+
+    user_id = "user-atx-trappers"
+    bootstrap = bootstrap_client_user(
+        client,
+        user_id,
+        email="atx-trappers@example.com",
+        name="ATX Firm",
+    )
+    tenant_id = bootstrap["memberships"][0]["tenant_id"]
+    headers = {"X-Dev-User-Id": user_id, "X-Tenant-Id": tenant_id}
+    address = "20401 TRAPPERS TRL, Manor, TX"
+    project_id = client.post(
+        "/v1/projects",
+        json={
+            "name": address,
+            "address": address,
+            "jurisdiction": "Travis County",
+        },
+        headers=headers,
+    ).json()["project_id"]
+
+    store = get_store()
+    state = store.get_project_state(tenant_id, project_id)
+    assert state
+    sections = []
+    for section in state.sections:
+        if section.step_key == "access":
+            sections.append(
+                section.model_copy(
+                    update={
+                        "body": (
+                            "<p>The property fronts <strong>Lockwood Springs</strong>, "
+                            "classified as a <strong>local road</strong>.</p>"
+                        )
+                    }
+                )
+            )
+        else:
+            sections.append(section)
+
+    first = sections[0]
+    sections[0] = first.model_copy(
+        update={
+            "fields": {
+                **first.fields,
+                "permit_contacts": FieldValue(
+                    value=(
+                        "Travis County Development Services, "
+                        f"{address}, 512-854-7425"
+                    )
+                ),
+                "acreage": FieldValue(value="10.00"),
+            }
+        }
+    )
+    store.put_project_state(
+        state.model_copy(
+            update={
+                "sections": sections,
+                "proposed_use": "24-unit multifamily",
+                "tcad_prop_id": 870361,
+                "map_exhibits": [],
+            }
+        )
+    )
+
+    job = client.post(
+        f"/v1/projects/{project_id}/exports",
+        json={"skin_id": "atxcivil_v1"},
+        headers=headers,
+    ).json()
+    assert job["status"] == "succeeded", job
+    assert job["skin_id"] == "atxcivil_v1"
+    checks = {finding["check"] for finding in job["findings"]}
+    assert "placeholder_leak" not in checks, job["findings"]
+    assert "heading_sequence" not in checks, job["findings"]
+
+    downloaded = client.get(
+        f"/v1/projects/{project_id}/artifacts/download",
+        params={"key": job["docx_s3_key"]},
+        headers=headers,
+    )
+    document = docx.Document(BytesIO(downloaded.content))
+    full_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    table_text = "\n".join(
+        cell.text for table in document.tables for row in table.rows for cell in row.cells
+    )
+    contact_lines = [
+        p.text for p in document.paragraphs if "Development Services" in p.text
+    ]
+
+    assert "870361" in table_text or "870361" in full_text
+    assert "10.00" in table_text or "10.00" in full_text
+    assert "See Exhibits" not in full_text
+    assert "See Survey" not in full_text
+    assert "According to the maps and additional data the property." not in full_text
+    assert "**" not in full_text
+    assert "Lockwood Springs" in full_text
+    assert all(address not in line for line in contact_lines)
+    assert "{{" not in full_text
+
+
 def test_civil1_cover_embeds_customer_logo(client: TestClient) -> None:
     bootstrap = bootstrap_client_user(client, "user-logo", name="Branded Firm")
     tenant_id = bootstrap["memberships"][0]["tenant_id"]
