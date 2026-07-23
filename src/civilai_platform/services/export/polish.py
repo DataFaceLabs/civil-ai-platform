@@ -1,8 +1,10 @@
 """Post-render DOCX polish for export skins (Civil1 / ATX presentation defects).
 
 Strips placeholder-only paragraphs, mid-sentence missing sentinels, empty
-recommendation/exhibit table rows, orphan ATX labels, empty leaf headings, and
-redundant "local street inferred" copy that otherwise hurt DOCX/PDF readability.
+recommendation/exhibit table rows, orphan ATX labels, empty leaf headings,
+invented See-Exhibit callouts, leaked markdown bold, truncated ACE stems,
+header-only identification tables, empty numbered list items, and redundant
+"local street inferred" copy that otherwise hurt DOCX/PDF readability.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ import re
 from io import BytesIO
 
 import docx
+from docx.oxml.ns import qn
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
@@ -23,6 +26,20 @@ _PLACEHOLDER_RE = re.compile(
     re.IGNORECASE,
 )
 _OUTLINE_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s")
+_MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_SEE_CALLOUT_RE = re.compile(
+    r"\s*\("
+    r"(?:See\s+Exhibits?:"
+    r"|See\s+the\s+[^)]*Map"
+    r"|See\s+Survey"
+    r"|See\s+Proposed\s+Development\s+Plan"
+    r")[^)]*\)\.?",
+    re.IGNORECASE,
+)
+_TRUNCATED_HYDROLOGY_RE = re.compile(
+    r"^According to the maps and additional data the property\.?$",
+    re.IGNORECASE,
+)
 
 # ATX house template emits these as bare normals ahead of real narration.
 _ORPHAN_LABELS = frozenset(
@@ -56,6 +73,7 @@ _ORPHAN_LABELS = frozenset(
         "waterway setback",
         "erosion hazard zone",
         "key facts",
+        "list of exhibits",
     }
 )
 
@@ -106,6 +124,18 @@ def _is_heading(paragraph: Paragraph) -> bool:
 def _is_missing_only(text: str) -> bool:
     cleaned = text.strip()
     return cleaned == _MISSING_TEXT or cleaned.casefold() == _PENDING_TEXT.casefold()
+
+
+def _has_numbering(paragraph: Paragraph) -> bool:
+    p_pr = paragraph._element.find(qn("w:pPr"))
+    if p_pr is None:
+        return False
+    return p_pr.find(qn("w:numPr")) is not None
+
+
+def _is_identification_header(cell_texts: list[str]) -> bool:
+    joined = " ".join(cell_texts).upper()
+    return any(token in joined for token in ("TRACT", "PARCEL", "ADDRESS", "ACRES"))
 
 
 def _scrub_placeholders(text: str) -> str:
@@ -162,6 +192,11 @@ def scrub_narration_text(text: str) -> str:
     for pattern, replacement in _AMP_HEADING_FIXES:
         cleaned = pattern.sub(replacement, cleaned)
 
+    # Invented ACE exhibit callouts (no uploaded sheets / X4 merge yet).
+    cleaned = _SEE_CALLOUT_RE.sub("", cleaned)
+    # TipTap → **bold** leak on plain jinja slots.
+    cleaned = _MD_BOLD_RE.sub(r"\1", cleaned)
+
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     cleaned = re.sub(r"\s+\.", ".", cleaned)
     cleaned = re.sub(r"\.\.+", ".", cleaned)
@@ -187,6 +222,13 @@ def _remove_paragraph(paragraph: Paragraph) -> None:
 def _remove_table_row(table: Table, row_index: int) -> None:
     row = table.rows[row_index]._tr
     row.getparent().remove(row)
+
+
+def _remove_table(table: Table) -> None:
+    element = table._element
+    parent = element.getparent()
+    if parent is not None:
+        parent.remove(element)
 
 
 def _is_orphan_label(text: str) -> bool:
@@ -230,6 +272,7 @@ def polish_export_docx(payload: bytes) -> bytes:
 
     # 1) Drop table rows whose value cell is empty or the missing sentinel.
     #    Also drop fully empty data rows (all cells blank / sentinel).
+    #    Drop TRACT/PARCEL identification tables that are header-only.
     for table in list(document.tables):
         for row_index in range(len(table.rows) - 1, -1, -1):
             cells = table.rows[row_index].cells
@@ -238,12 +281,13 @@ def polish_export_docx(payload: bytes) -> bytes:
                 continue
             cell_texts = [cell.text.strip() for cell in cells]
             scrubbed_cells = [_scrub_placeholders(value) for value in cell_texts]
-            if all(not value or _is_missing_only(raw) for value, raw in zip(scrubbed_cells, cell_texts, strict=False)):
-                # Keep a header row when it looks like labels (TRACT / PARCEL ID).
-                joined = " ".join(cell_texts).upper()
-                if row_index == 0 and any(
-                    token in joined for token in ("TRACT", "PARCEL", "ADDRESS", "ACRES")
-                ):
+            if all(
+                not value or _is_missing_only(raw)
+                for value, raw in zip(scrubbed_cells, cell_texts, strict=False)
+            ):
+                # Keep a header row temporarily when it looks like labels; may drop
+                # the whole table below if no data rows remain.
+                if row_index == 0 and _is_identification_header(cell_texts):
                     continue
                 if row_index > 0 or not any(cell_texts):
                     _remove_table_row(table, row_index)
@@ -256,10 +300,19 @@ def polish_export_docx(payload: bytes) -> bytes:
                 elif scrubbed != value:
                     cells[-1].text = scrubbed
 
+        # Header-only TRACT/PARCEL table → remove entire table.
+        if len(table.rows) == 1:
+            header_texts = [cell.text.strip() for cell in table.rows[0].cells]
+            if _is_identification_header(header_texts):
+                _remove_table(table)
+
     # 2) Scrub mid-sentence placeholders + narration defects; drop sentinel-only paras.
     for paragraph in list(document.paragraphs):
         text = _paragraph_text(paragraph)
         if not text:
+            # Empty numbered list item (Word still shows "1.") — drop.
+            if _has_numbering(paragraph):
+                _remove_paragraph(paragraph)
             continue
         if _is_heading(paragraph):
             fixed = scrub_narration_text(text)
@@ -270,6 +323,9 @@ def polish_export_docx(payload: bytes) -> bytes:
             _remove_paragraph(paragraph)
             continue
         scrubbed = scrub_narration_text(_scrub_placeholders(text))
+        if _TRUNCATED_HYDROLOGY_RE.match(scrubbed):
+            _remove_paragraph(paragraph)
+            continue
         if not scrubbed:
             _remove_paragraph(paragraph)
         elif scrubbed != text:
