@@ -31,6 +31,14 @@ def test_editor_body_preserves_strong_as_markdown_bold() -> None:
     assert "Outside municipal authority." in text
 
 
+def test_editor_body_strips_hash_headings_from_html_paras() -> None:
+    html = "<p>## Hydrology</p><p>Surface drainage is sheet flow.</p>"
+    text = editor_body_to_text(html)
+    assert "##" not in text
+    assert "Hydrology" not in text
+    assert "Surface drainage is sheet flow." in text
+
+
 def test_editor_body_br_is_single_newline() -> None:
     html = "<p>Line one<br/>Line two</p>"
     text = editor_body_to_text(html)

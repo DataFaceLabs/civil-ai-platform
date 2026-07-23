@@ -27,6 +27,8 @@ _PLACEHOLDER_RE = re.compile(
 )
 _OUTLINE_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s")
 _MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+# Agent/pipeline drafts sometimes emit ATX-style ``## Floodplain`` labels.
+_MD_HEADING_LINE_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
 _SEE_CALLOUT_RE = re.compile(
     r"\s*\("
     r"(?:See\s+Exhibits?:"
@@ -196,6 +198,9 @@ def scrub_narration_text(text: str) -> str:
     cleaned = _SEE_CALLOUT_RE.sub("", cleaned)
     # TipTap → **bold** leak on plain jinja slots.
     cleaned = _MD_BOLD_RE.sub(r"\1", cleaned)
+    # Markdown ATX subsection labels (``## Parcel Characteristics``) — drop the line.
+    cleaned = _MD_HEADING_LINE_RE.sub("", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
 
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     cleaned = re.sub(r"\s+\.", ".", cleaned)
