@@ -48,9 +48,9 @@ _TOKEN_RE = re.compile(r"\{([A-Z_0-9]+)\}")
 # - "![LOGO/IMAGE]" is the cover *site aerial* slot (every delivered study in the corpus
 #   has the parcel aerial there) -- rewritten to `{{ cover_aerial }}` and fed an
 #   InlineImage by the renderer.
-# - The identification table (TRACT/PARCEL ID/ADDRESS/DEED DOC. NO./ACRES) has no
-#   tokens in its data row today -- it's populated by hand in every delivered study
-#   seen in the corpus. Wiring it needs a jinja loop over tract rows, deferred to E2.
+# - The identification table (TRACT/PARCEL ID/ADDRESS/DEED DOC. NO./ACRES) is
+#   wired to ``{{ tract }}`` / ``{{ parcel_id }}`` / ``{{ property_address }}`` /
+#   ``{{ deed_doc_no }}`` / ``{{ property_acres }}`` (P0 Trappers polish).
 #
 # Fidelity pass (2026-07-19): the raw template file ACE shared diverges from their
 # *delivered* reports (client-data/feasibility-studies/*.pdf). The delivered look is the

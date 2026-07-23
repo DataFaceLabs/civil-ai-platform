@@ -195,6 +195,67 @@ def test_polish_clock_tower_presentation_defects() -> None:
     assert "is zoned Commercial Highway" in joined
 
 
+def test_polish_trappers_atx_presentation_defects() -> None:
+    """Regression for Trappers Trail ATX PDF review (2026-07-23)."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    document = docx.Document()
+
+    # Header-only identification table (pre-fix template behavior).
+    table = document.add_table(rows=2, cols=5)
+    for cell, label in zip(
+        table.rows[0].cells,
+        ["TRACT", "PARCEL ID", "ADDRESS", "DEED DOC. NO.", "ACRES"],
+        strict=True,
+    ):
+        cell.text = label
+    # Empty data row — polish should drop the whole table.
+    document.add_paragraph(
+        "According to the maps and additional data the property."
+    )
+    document.add_paragraph(
+        "The lot is currently developed. (See Exhibits: Vicinity Map, Zoning Map)."
+    )
+    document.add_paragraph(
+        "Access fronts **Lockwood Springs**, classified as a **local road**."
+    )
+    document.add_heading("EXHIBITS", level=2)
+    document.add_paragraph("List of Exhibits")
+    empty_numbered = document.add_paragraph("")
+    # Attach Word numbering so an empty para still renders as "1."
+    p_pr = empty_numbered._element.get_or_add_pPr()
+    num_pr = OxmlElement("w:numPr")
+    ilvl = OxmlElement("w:ilvl")
+    ilvl.set(qn("w:val"), "0")
+    num_id = OxmlElement("w:numId")
+    num_id.set(qn("w:val"), "1")
+    num_pr.append(ilvl)
+    num_pr.append(num_id)
+    p_pr.append(num_pr)
+
+    before = BytesIO()
+    document.save(before)
+    polished = polish_export_docx(before.getvalue())
+    out = docx.Document(BytesIO(polished))
+    texts = [p.text.strip() for p in out.paragraphs if p.text.strip()]
+    joined = "\n".join(texts)
+
+    assert not out.tables  # header-only TRACT table removed
+    assert "According to the maps and additional data the property." not in joined
+    assert "See Exhibits" not in joined
+    assert "**" not in joined
+    assert "Lockwood Springs" in joined
+    assert "List of Exhibits" not in texts
+    # No orphan empty numbered paragraph left behind.
+    for paragraph in out.paragraphs:
+        if paragraph.text.strip():
+            continue
+        p_pr = paragraph._element.find(qn("w:pPr"))
+        if p_pr is not None:
+            assert p_pr.find(qn("w:numPr")) is None
+
+
 def test_linter_allows_outline_subsequence_after_polish() -> None:
     from civilai_platform.services.export.linter import lint_docx
     from civilai_platform.services.export.skins import get_skin

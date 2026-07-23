@@ -192,6 +192,61 @@ def _pick(values: dict[str, str], *keys: str, default: str = _MISSING) -> str:
     return default
 
 
+_MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _strip_md_bold(text: str) -> str:
+    """Remove TipTap-derived ``**bold**`` markers from plain (non-Subdoc) slots."""
+    if "**" not in text:
+        return text
+    return _MD_BOLD_RE.sub(r"\1", text)
+
+
+def _parcel_id_value(state: ProjectState, fields: dict[str, str], site_payload: dict[str, Any]) -> str:
+    if state.tcad_prop_id is not None:
+        return str(state.tcad_prop_id)
+    picked = _pick(
+        fields,
+        "parcel_id",
+        "tcad_prop_id",
+        "property_id",
+        "PROP_ID",
+        default="",
+    )
+    if picked:
+        return picked
+    entity = str(site_payload.get("entity_id") or "").strip()
+    # Prefer numeric CAD ids; skip internal entity UUIDs.
+    if entity and re.fullmatch(r"\d{4,}", entity):
+        return entity
+    return ""
+
+
+def _scrub_site_address_from_contacts(contacts: str, property_address: str) -> str:
+    """Drop the project situs when it was mashed into an agency contact line."""
+    if contacts == _MISSING or not property_address.strip():
+        return contacts
+    addr = property_address.strip()
+    # Exact substring (common mash: "Agency, 20401 TRAPPERS TRL, Manor, TX…")
+    if addr.casefold() in contacts.casefold():
+        cleaned = re.sub(re.escape(addr), "", contacts, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        cleaned = re.sub(r"\s+,", ",", cleaned)
+        cleaned = re.sub(r",\s*,", ",", cleaned)
+        cleaned = cleaned.strip(" ,;")
+        return cleaned or _MISSING
+    # Street-core match (zip/city variants)
+    core = _street_core(addr)
+    if core and re.search(re.escape(core), contacts, flags=re.IGNORECASE):
+        cleaned = re.sub(re.escape(core), "", contacts, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        cleaned = re.sub(r"\s+,", ",", cleaned)
+        cleaned = re.sub(r",\s*,", ",", cleaned)
+        cleaned = cleaned.strip(" ,;")
+        return cleaned or _MISSING
+    return contacts
+
+
 def _section_bodies(state: ProjectState, *, canonical_address: str) -> dict[str, str]:
     bodies: dict[str, str] = {}
     for section in state.sections:
@@ -392,7 +447,12 @@ def build_export_context(
         "proposed_development": state.proposed_use or _MISSING,
         "report_date": datetime.now(UTC).date().isoformat(),
         "property_address": property_address,
-        "property_acres": acreage,
+        "property_acres": acreage if acreage != _MISSING else "",
+        "parcel_id": _parcel_id_value(state, fields, site_payload),
+        "tract": _pick(fields, "tract", "TRACT", "legal_tract", default=""),
+        "deed_doc_no": _pick(
+            fields, "deed_doc_no", "deed_doc", "DEED_DOC_NO", "deed_number", default=""
+        ),
         "existing_development": _pick(
             fields, "existing_development", "existing_land_use", "LAND_USE", "land_use"
         ),
@@ -400,14 +460,23 @@ def build_export_context(
             fields, "tcad_info", "legal_desc", "legal_description", "LEGAL_DESCRIPTION"
         ),
         "tcad_discrepancies": _pick(fields, "tcad_discrepancies"),
-        "adjacent_props": bodies.get("parcel") or _pick(fields, "adjacent_props"),
+        "adjacent_props": _strip_md_bold(
+            bodies.get("parcel") or _pick(fields, "adjacent_props")
+        ),
         "jurisdiction_status": project.jurisdiction
         or _pick(fields, "jurisdiction_primary", "JURISDICTION_PRIMARY"),
-        "jurisdiction_info": _pick(fields, "permit_authority", "jurisdiction_info"),
+        # Civil1 §3.4 still accepts permit_authority as a fallback for this slot.
+        # ATX cover/location stem no longer interpolates jurisdiction_info.
+        "jurisdiction_info": _pick(
+            fields, "jurisdiction_info", "JURISDICTION_INFO", "permit_authority"
+        ),
         "governing_juris": project.jurisdiction
         or _pick(fields, "jurisdiction_primary", "JURISDICTION_PRIMARY"),
         "required_permits": _pick(fields, "required_permits", "REQUIRED_PERMITS"),
-        "permit_contacts": _pick(fields, "permit_contacts", "PERMIT_CONTACTS"),
+        "permit_contacts": _scrub_site_address_from_contacts(
+            _pick(fields, "permit_contacts", "PERMIT_CONTACTS"),
+            property_address,
+        ),
         "ecoregion": _pick(fields, "ecoregion", "ECOREGION"),
         "ecoregion_desc": _pick(fields, "ecoregion_desc", "ECOREGION_DESC"),
         "hydrology_char": _pick(fields, "hydrology_char", "HYDROLOGY_CHAR"),
@@ -443,7 +512,9 @@ def build_export_context(
         "compatibility_stds": _pick(fields, "compatibility_stds", "COMPATIBILITY_STDS"),
         "dev_agreements": _pick(fields, "development_agreements", "DEVELOPMENT_AGREEMENTS"),
         "easements_setbacks": _pick(fields, "easements_setbacks", "EASEMENTS_SETBACKS"),
-        "transportation_reqs": bodies.get("access") or _pick(fields, "transportation_reqs"),
+        "transportation_reqs": _strip_md_bold(
+            bodies.get("access") or _pick(fields, "transportation_reqs")
+        ),
         "completed_docs": _pick(fields, "completed_docs"),
     }
     for index in range(1, 6):
