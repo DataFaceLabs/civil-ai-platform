@@ -122,8 +122,15 @@ def _section_config(step_key: str) -> dict[str, Any]:
                     "IFC edition field below has a value. If it is empty, say the current fire "
                     "code adoption should be confirmed with the fire protection district -- do "
                     "not guess an edition from the jurisdiction or fire district name alone.\n\n"
+                    "Nearest-main GIS fields and tap cards are proximity / historical evidence "
+                    "only — never treat them as capacity, pressure, connection approval, or "
+                    "will-serve. If nearest-main detail is empty, say mapped mains were not "
+                    "found nearby (or coverage is unknown) rather than inventing distances.\n\n"
                     "Water: {{field.WATER_SERVICE}}\n"
                     "Wastewater: {{field.WASTEWATER_SERVICE}}\n"
+                    "Nearest water main: {{field.NEAREST_WATER_MAIN_DETAIL}}\n"
+                    "Nearest wastewater main: {{field.NEAREST_WASTEWATER_MAIN_DETAIL}}\n"
+                    "Tap cards: {{field.TAP_CARDS}}\n"
                     "Electric provider: {{field.ELECTRIC_PROVIDER}}\n"
                     "Fire protection: {{field.FIRE_PROTECTION}}\n"
                     "IFC edition: {{field.IFC_EDITION}}\n"
@@ -133,6 +140,9 @@ def _section_config(step_key: str) -> dict[str, Any]:
                 "inputFieldCodes": [
                     "WATER_SERVICE",
                     "WASTEWATER_SERVICE",
+                    "NEAREST_WATER_MAIN_DETAIL",
+                    "NEAREST_WASTEWATER_MAIN_DETAIL",
+                    "TAP_CARDS",
                     "ELECTRIC_PROVIDER",
                     "FIRE_PROTECTION",
                     "IFC_EDITION",
