@@ -168,4 +168,5 @@ module "amplify" {
   cognito_client_id           = var.create_platform_persistence ? module.cognito[0].app_client_id : ""
   cognito_hosted_ui_base      = var.create_platform_persistence ? module.cognito[0].hosted_ui_base_url : ""
   mapbox_public_token         = var.mapbox_access_token
+  data_lake_bucket_name       = var.data_lake_bucket
 }
