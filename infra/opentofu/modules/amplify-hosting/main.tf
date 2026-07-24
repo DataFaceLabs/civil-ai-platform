@@ -59,12 +59,91 @@ variable "develop_basic_auth_password" {
   description = "HTTP Basic Auth password gating the branch_name (team test space) URL -- an outer, network-level gate in front of Cognito, so an unauthenticated visitor can't reach any page (including the real login screen) without it. Empty string leaves the branch open, matching prior behavior."
 }
 
+variable "data_lake_bucket_name" {
+  type        = string
+  default     = "civilai-data"
+  description = "Lakehouse bucket used to sync Tap Card Locator payload into the FE build."
+}
+
+variable "tap_cards_map_s3_prefix" {
+  type        = string
+  default     = "dev/static/tap_cards_coverage_map"
+  description = "S3 key prefix (no leading slash) for Tap Card Locator static assets."
+}
+
 locals {
   # Fixed product name, not per-environment: since the release migration this one app
   # hosts two branches (branch_name = the team's test space, production_branch_name =
   # deliberate releases), so a suffix tied to a single environment no longer fits either.
   # The Environment tag below still identifies which tofu environment owns the app.
   name = "civilai-fe"
+}
+
+# Amplify build service role: needed so preBuild can aws s3 cp the Tap Card Locator
+# payload. Also attach the AWS-managed Amplify backend policy Amplify expects when a
+# custom service role is set.
+data "aws_iam_policy_document" "amplify_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["amplify.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "amplify" {
+  name               = "${var.environment}-civilai-amplify"
+  assume_role_policy = data.aws_iam_policy_document.amplify_assume.json
+
+  tags = {
+    Environment = var.environment
+    Service     = "frontend"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "amplify_backend" {
+  role       = aws_iam_role.amplify.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess-Amplify"
+}
+
+data "aws_iam_policy_document" "amplify_tap_cards_map" {
+  statement {
+    sid    = "TapCardsMapList"
+    effect = "Allow"
+    actions = [
+      "s3:ListBucket",
+    ]
+    resources = [
+      "arn:aws:s3:::${var.data_lake_bucket_name}",
+    ]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values = [
+        var.tap_cards_map_s3_prefix,
+        "${var.tap_cards_map_s3_prefix}/*",
+      ]
+    }
+  }
+
+  statement {
+    sid    = "TapCardsMapGet"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+    ]
+    resources = [
+      "arn:aws:s3:::${var.data_lake_bucket_name}/${var.tap_cards_map_s3_prefix}/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "amplify_tap_cards_map" {
+  name   = "${var.environment}-civilai-amplify-tap-cards-map"
+  role   = aws_iam_role.amplify.id
+  policy = data.aws_iam_policy_document.amplify_tap_cards_map.json
 }
 
 resource "aws_amplify_app" "fe" {
@@ -80,12 +159,17 @@ resource "aws_amplify_app" "fe" {
   # compute/default/server.js on nodejs20.x.
   platform = "WEB_COMPUTE"
 
+  iam_service_role_arn = aws_iam_role.amplify.arn
+
   build_spec = <<-EOT
     version: 1
     frontend:
       phases:
         preBuild:
           commands:
+            - mkdir -p public/tap-cards-map
+            - aws s3 cp s3://${var.data_lake_bucket_name}/${var.tap_cards_map_s3_prefix}/data.json.gz public/tap-cards-map/data.json.gz
+            - aws s3 cp s3://${var.data_lake_bucket_name}/${var.tap_cards_map_s3_prefix}/meta.json public/tap-cards-map/meta.json || true
             - npm ci
         build:
           commands:
