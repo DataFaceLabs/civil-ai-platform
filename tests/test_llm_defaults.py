@@ -26,3 +26,18 @@ def test_utilities_section_never_states_ifc_edition_on_null() -> None:
     assert "IFC_EDITION" in utilities["inputFieldCodes"]
     assert "{{field.IFC_EDITION}}" in utilities["userPromptTemplate"]
     assert "unless the IFC edition field below has a value" in utilities["userPromptTemplate"]
+
+
+def test_utilities_section_includes_nearest_main_and_tap_cards() -> None:
+    # M2-AGENT-UTIL: lake now serves nearest_* + tap cards; Prompt Lab must
+    # pass them into the draft and keep the capacity / will-serve non-goal.
+    utilities = default_llm_lab_config()["sections"]["utilities"]
+    for code in (
+        "NEAREST_WATER_MAIN_DETAIL",
+        "NEAREST_WASTEWATER_MAIN_DETAIL",
+        "TAP_CARDS",
+    ):
+        assert code in utilities["inputFieldCodes"]
+        assert f"{{{{field.{code}}}}}" in utilities["userPromptTemplate"]
+    assert "will-serve" in utilities["userPromptTemplate"]
+    assert "proximity / historical evidence" in utilities["userPromptTemplate"]
