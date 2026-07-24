@@ -50,6 +50,7 @@ module "secrets" {
   environment         = var.environment
   mapbox_access_token = var.mapbox_access_token
   github_access_token = var.github_access_token
+  tavily_api_key       = var.tavily_api_key
 }
 
 module "cognito" {
@@ -127,6 +128,7 @@ module "api_gateway" {
   dev_data_origins           = var.dev_data_origins
   data_service_key_parameter = module.secrets.data_service_key_parameter_name
   data_service_key           = module.secrets.data_service_key
+  tavily_api_key             = module.secrets.tavily_api_key
   create_http_api            = true
   lambda_package_path        = var.lambda_package_path
   dev_auth                   = var.dev_auth
@@ -166,4 +168,5 @@ module "amplify" {
   cognito_client_id           = var.create_platform_persistence ? module.cognito[0].app_client_id : ""
   cognito_hosted_ui_base      = var.create_platform_persistence ? module.cognito[0].hosted_ui_base_url : ""
   mapbox_public_token         = var.mapbox_access_token
+  data_lake_bucket_name       = var.data_lake_bucket
 }

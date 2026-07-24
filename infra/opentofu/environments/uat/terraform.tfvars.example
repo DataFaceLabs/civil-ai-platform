@@ -18,6 +18,10 @@ dev_serving_s3_uri = "s3://civilai-data/dev/serving/current.json"
 
 mapbox_access_token = "pk...."
 
+# Agent web search (platform Lambda). Required for section drafts that enable webSearch.
+# Also stored at SSM /civilai/uat/tavily-api-key when set.
+tavily_api_key = "tvly-..."
+
 # Browser Origin allow-list for data-API CORS *and* S3 presigned uploads.
 cors_origins = [
   "http://localhost:5173",
