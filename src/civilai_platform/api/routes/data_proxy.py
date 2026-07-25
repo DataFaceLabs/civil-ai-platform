@@ -26,7 +26,7 @@ router = APIRouter(prefix="/v1/data-proxy", tags=["data-proxy"])
 # FE's staged site flow (resolve-address -> per-section facts -> assemble, plus the
 # by-address/by-parcel single-shot fallbacks) all live under these two prefixes; nothing
 # here mutates lake data or touches the experimental LLM/admin surfaces.
-_PASSTHROUGH_ALLOWED_PREFIXES = ("fe/site/", "sections/")
+_PASSTHROUGH_ALLOWED_PREFIXES = ("fe/site/", "fe/tap-cards/", "sections/")
 
 
 def _viewer_ctx(ctx: Annotated[AuthContext, Depends(tenant_ctx)]) -> AuthContext:
