@@ -240,3 +240,33 @@ def test_passthrough_preserves_404(client: TestClient) -> None:
         headers=_headers("user-a", tenant_id),
     )
     assert res.status_code == 404
+
+
+@respx.mock
+def test_passthrough_tap_card_document_binary(client: TestClient) -> None:
+    """FE tap-card proxy PDFs must pass through with content-type preserved."""
+    tenant_id = _bootstrap(client, "user-a")
+    pdf = b"%PDF-1.4 tap-card"
+    respx.get("http://data.test/v1/fe/tap-cards/austin_water/documents/161563").mock(
+        return_value=httpx.Response(
+            200,
+            content=pdf,
+            headers={"content-type": "application/pdf"},
+        )
+    )
+    res = client.get(
+        "/v1/data-proxy/passthrough/fe/tap-cards/austin_water/documents/161563",
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 200
+    assert res.content == pdf
+    assert res.headers["content-type"].startswith("application/pdf")
+
+
+def test_passthrough_rejects_unrelated_fe_prefix(client: TestClient) -> None:
+    tenant_id = _bootstrap(client, "user-a")
+    res = client.get(
+        "/v1/data-proxy/passthrough/fe/admin/secrets",
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 403
