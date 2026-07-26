@@ -24,9 +24,16 @@ router = APIRouter(prefix="/v1/data-proxy", tags=["data-proxy"])
 
 # Read-only site-data families the browser is allowed to reach through the proxy. The
 # FE's staged site flow (resolve-address -> per-section facts -> assemble, plus the
-# by-address/by-parcel single-shot fallbacks) all live under these two prefixes; nothing
-# here mutates lake data or touches the experimental LLM/admin surfaces.
-_PASSTHROUGH_ALLOWED_PREFIXES = ("fe/site/", "fe/tap-cards/", "sections/")
+# by-address/by-parcel single-shot fallbacks) all live under these prefixes; Explorer
+# also needs tiles + serving freshness. Nothing here mutates lake data or touches
+# the experimental LLM/admin surfaces.
+_PASSTHROUGH_ALLOWED_PREFIXES = (
+    "fe/site/",
+    "fe/tap-cards/",
+    "fe/tiles/",
+    "fe/serving/",
+    "sections/",
+)
 
 
 def _viewer_ctx(ctx: Annotated[AuthContext, Depends(tenant_ctx)]) -> AuthContext:
