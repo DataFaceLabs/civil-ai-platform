@@ -22,9 +22,15 @@ def _admin_tenant_ctx(ctx: Annotated[AuthContext, Depends(tenant_ctx)]) -> AuthC
 
 @router.get("", response_model=list[UserResponse])
 def list_users(
-    ctx: Annotated[AuthContext, Depends(_admin_tenant_ctx)],
+    ctx: Annotated[AuthContext, Depends(tenant_ctx)],
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> list[UserResponse]:
+    # Deliberately Viewer-level, not Admin: the tenant user directory is what the FE
+    # resolves @mentions and project assignees against, and it hydrates during session
+    # bootstrap. Gating it at Admin locked every non-Admin member out of the app
+    # entirely -- login 403'd before a session existed. Writes below stay Admin-only.
+    # `list_users` never populates `temporary_password` (set only on create), so this
+    # exposes nothing beyond a teammate directory.
     assert ctx.tenant_id
     return user_svc.list_users(store, ctx.tenant_id)
 

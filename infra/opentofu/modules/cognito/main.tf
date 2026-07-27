@@ -67,6 +67,17 @@ resource "aws_cognito_user_pool" "main" {
     require_numbers   = true
     require_symbols   = false
     require_uppercase = true
+
+    # Invites are onboarding emails to outside contractors and client staff, who often do
+    # not act within a week. Cognito's default is 7 days, after which Hosted UI rejects the
+    # temp password with "must be reset by an administrator" and the invite has to be
+    # reissued by hand. 21 days covers a normal onboarding lag without leaving a
+    # never-redeemed invite valid indefinitely.
+    #
+    # Set here rather than via `admin_create_user_config.unused_account_validity_days` --
+    # the two are mutually exclusive in the Cognito API and this is the non-deprecated one.
+    # In-place update; does not force pool replacement.
+    temporary_password_validity_days = 21
   }
 
   auto_verified_attributes = ["email"]
