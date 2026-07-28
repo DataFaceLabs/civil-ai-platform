@@ -272,6 +272,39 @@ def test_passthrough_preserves_404(client: TestClient) -> None:
 
 
 @respx.mock
+def test_passthrough_timeout_returns_504(client: TestClient) -> None:
+    """Upstream ReadTimeout must become a clean 504, not an ASGI 500."""
+    tenant_id = _bootstrap(client, "user-a")
+    respx.post("http://data.test/v1/fe/site/by-address").mock(
+        side_effect=httpx.ReadTimeout("timed out")
+    )
+    res = client.post(
+        "/v1/data-proxy/passthrough/fe/site/by-address",
+        json={"address": "200 Williams Dr, Georgetown, TX"},
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 504
+    detail = res.json()["detail"]
+    assert "timed out" in detail.lower()
+    assert "by-address" in detail
+
+
+@respx.mock
+def test_passthrough_connect_error_returns_502(client: TestClient) -> None:
+    """Upstream connect failure must become a clean 502 for the FE."""
+    tenant_id = _bootstrap(client, "user-a")
+    respx.get("http://data.test/v1/sections/flood/facts/ent-1").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    res = client.get(
+        "/v1/data-proxy/passthrough/sections/flood/facts/ent-1",
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 502
+    assert "Cannot reach the data API" in res.json()["detail"]
+
+
+@respx.mock
 def test_passthrough_tap_card_document_binary(client: TestClient) -> None:
     """FE tap-card proxy PDFs must pass through with content-type preserved."""
     tenant_id = _bootstrap(client, "user-a")

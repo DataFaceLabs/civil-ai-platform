@@ -3,7 +3,12 @@
 import httpx
 import respx
 
-from civilai_platform.services.data_proxy import DataProxyClient, llm_api_base, llm_invoke_timeout_sec
+from civilai_platform.services.data_proxy import (
+    DataProxyClient,
+    llm_api_base,
+    llm_invoke_timeout_sec,
+    passthrough_timeout_sec,
+)
 
 
 @respx.mock
@@ -122,3 +127,27 @@ def test_data_proxy_invoke_llm_draft_uses_draft_timeout(monkeypatch) -> None:
     assert result["text"] == "ok"
     assert route.called
     assert route.calls[0].request.extensions["timeout"]["connect"] == 390.0
+
+
+def test_passthrough_timeout_site_paths_default_longer() -> None:
+    assert passthrough_timeout_sec("fe/site/by-address") == 90.0
+    assert passthrough_timeout_sec("fe/site/resolve-address") == 90.0
+    assert passthrough_timeout_sec("fe/site/by-parcel") == 90.0
+    assert passthrough_timeout_sec("sections/flood/facts/ent-1") == 30.0
+
+
+def test_passthrough_timeout_site_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("CIVILAI_DATA_SITE_PASSTHROUGH_TIMEOUT_SEC", "120")
+    assert passthrough_timeout_sec("fe/site/by-address") == 120.0
+
+
+@respx.mock
+def test_data_proxy_passthrough_uses_site_timeout(monkeypatch) -> None:
+    monkeypatch.setenv("CIVILAI_DATA_SITE_PASSTHROUGH_TIMEOUT_SEC", "75")
+    route = respx.post("http://data.test/v1/fe/site/by-address").mock(
+        return_value=httpx.Response(200, json={"ok": True})
+    )
+    client = DataProxyClient(base_url="http://data.test", timeout=30.0)
+    resp = client.passthrough("POST", "fe/site/by-address", json={"address": "x"})
+    assert resp.status_code == 200
+    assert route.calls[0].request.extensions["timeout"]["connect"] == 75.0
