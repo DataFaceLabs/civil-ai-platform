@@ -175,12 +175,12 @@ def build_context(tpl: DocxTemplate) -> dict[str, Any]:
         "existing_development": (
             parcel.get("existing_development") or "vacant (no structures on record)"
         ),
-        "tcad_info": (
-            f"TCAD Property ID: {parcel.get('source_parcel_id')}\n"
+        "cad_info": (
+            f"CAD Property ID: {parcel.get('source_parcel_id')}\n"
             f"Legal Description: {parcel.get('legal_desc')}\n"
             f"Land Use: {parcel.get('land_use_description')} ({parcel.get('land_use_code')})"
         ),
-        "tcad_discrepancies": parcel.get("tcad_discrepancies") or pending,
+        "cad_discrepancies": parcel.get("cad_discrepancies") or pending,
         "adjacent_props": parcel.get("adjacent_props") or pending,
         # --- jurisdiction (direct + composite) ---
         "jurisdiction_status": (

@@ -33,7 +33,7 @@ def _good_document() -> docx.document.Document:
     document.add_heading("2.2 Site Characteristics", level=3)
     document.add_paragraph("The elevation ranges from 594.8 ft to 601.2 ft.")
     document.add_heading("2.3 Property Identification Number", level=3)
-    document.add_paragraph("TCAD Property ID: 984219")
+    document.add_paragraph("CAD Property ID: 984219")
     document.add_heading("3. Feasibility Study", level=2)
     for n in range(1, 20):
         document.add_heading(f"3.{n} Section {n}", level=3)
@@ -118,7 +118,7 @@ def test_uuid_leak_detects_internal_id() -> None:
 def test_uuid_leak_clean_document_passes() -> None:
     mod = _load_module()
     document = docx.Document()
-    document.add_paragraph("TCAD Property ID: 984219")
+    document.add_paragraph("CAD Property ID: 984219")
     findings = mod.check_uuid_leak(document)
     assert findings == []
 

@@ -263,7 +263,7 @@ class ProjectState(BaseModel):
     parcel: dict[str, Any] | None = None
     site_payload: dict[str, Any] | None = None
     site_context: dict[str, FieldValue] | None = None
-    tcad_prop_id: int | None = None
+    cad_prop_id: int | None = None
     client_contacts: list[ClientContact] = Field(default_factory=list)
     client_notes: list[ClientNote] = Field(default_factory=list)
     references: list[dict[str, Any]] = Field(default_factory=list)
