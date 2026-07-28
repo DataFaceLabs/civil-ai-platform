@@ -267,7 +267,7 @@ def test_atx_skin_export_trappers_presentation(client: TestClient) -> None:
             update={
                 "sections": sections,
                 "proposed_use": "24-unit multifamily",
-                "tcad_prop_id": 870361,
+                "cad_prop_id": 870361,
                 "map_exhibits": [],
             }
         )

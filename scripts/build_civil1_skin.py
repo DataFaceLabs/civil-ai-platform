@@ -407,8 +407,8 @@ def build_body(document: DocumentType) -> None:
         ],
     )
     heading(document, "2.2 Property Identification", 2)
-    para(document, "{{ tcad_info }}")
-    para(document, "{{ tcad_discrepancies }}")
+    para(document, "{{ cad_info }}")
+    para(document, "{{ cad_discrepancies }}")
     heading(document, "2.3 Adjacent Sites & Context", 2)
     para(document, "{{ adjacent_props }}")
 

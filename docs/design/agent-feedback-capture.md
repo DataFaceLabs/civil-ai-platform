@@ -60,7 +60,7 @@ blocks or fails the request** — all errors are swallowed and logged.
   "model": { "preset": "...", "model_id": "..." },
   "input_context": {
     "field_context": { "...": "..." },   // full data pull — PII-redacted (owner_name -> [redacted])
-                                         // includes PROPERTY_ADDRESS, TCAD_INFO, etc.
+                                         // includes PROPERTY_ADDRESS, CAD_INFO, etc.
     "proposed_use": "...",
     "request": "...",                    // sectionwise prompt
     "chat_system_prompt": "...",         // tenant Lab system prompt that steered the agent
@@ -82,7 +82,7 @@ utilities, …), initiate state is the draft's `input_context`:
 | You asked for | Captured as |
 |---|---|
 | Address | `input_context.field_context.PROPERTY_ADDRESS` |
-| Parcel ID | `entity_id` + `field_context.TCAD_INFO` / geometry ids |
+| Parcel ID | `entity_id` + `field_context.CAD_INFO` / geometry ids |
 | Full data-pull blob | `input_context.field_context` (all governed codes) |
 | Sectionwise prompt | `input_context.request` |
 | Lab system prompt / instructions | `input_context.chat_system_prompt` / `chat_instructions` |
