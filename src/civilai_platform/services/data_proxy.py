@@ -194,6 +194,15 @@ class DataProxyClient:
             body["parcel_id"] = parcel_id
         return self.request("POST", "/v1/entities/resolve", json=body)
 
+    def resolve_site_address(self, address: str) -> dict[str, Any]:
+        """FE staged resolve — returns ``entity_id`` for a unique situs match."""
+        return self.request(
+            "POST",
+            "/v1/fe/site/resolve-address",
+            json={"address": address},
+            timeout=passthrough_timeout_sec("fe/site/resolve-address"),
+        )
+
     def get_site(self, entity_id: str) -> dict[str, Any]:
         return self.request("GET", f"/v1/fe/site/by-entity/{entity_id}")
 
