@@ -172,6 +172,35 @@ def test_passthrough_rejects_paths_outside_allowlist(client: TestClient) -> None
 
 
 @respx.mock
+def test_passthrough_allows_explorer_tiles_and_serving(client: TestClient) -> None:
+    """Explorer needs tiles manifest + serving current through the proxy."""
+    tenant_id = _bootstrap(client, "user-a")
+    tiles = respx.get("http://data.test/v1/fe/tiles/current").mock(
+        return_value=httpx.Response(
+            200,
+            json={"snapshot_date": "2026-07-24", "env": "dev", "expires_in": 60, "layers": []},
+        )
+    )
+    serving = respx.get("http://data.test/v1/fe/serving/current").mock(
+        return_value=httpx.Response(200, json={"snapshot_date": "2026-07-24d", "domains": {}})
+    )
+    tiles_res = client.get(
+        "/v1/data-proxy/passthrough/fe/tiles/current",
+        headers=_headers("user-a", tenant_id),
+    )
+    serving_res = client.get(
+        "/v1/data-proxy/passthrough/fe/serving/current",
+        headers=_headers("user-a", tenant_id),
+    )
+    assert tiles_res.status_code == 200
+    assert tiles_res.json()["snapshot_date"] == "2026-07-24"
+    assert serving_res.status_code == 200
+    assert serving_res.json()["snapshot_date"] == "2026-07-24d"
+    assert tiles.called
+    assert serving.called
+
+
+@respx.mock
 def test_passthrough_get_forwards_with_service_key(client: TestClient) -> None:
     tenant_id = _bootstrap(client, "user-a")
     route = respx.get("http://data.test/v1/sections/flood/facts/ent-1").mock(
@@ -240,6 +269,39 @@ def test_passthrough_preserves_404(client: TestClient) -> None:
         headers=_headers("user-a", tenant_id),
     )
     assert res.status_code == 404
+
+
+@respx.mock
+def test_passthrough_timeout_returns_504(client: TestClient) -> None:
+    """Upstream ReadTimeout must become a clean 504, not an ASGI 500."""
+    tenant_id = _bootstrap(client, "user-a")
+    respx.post("http://data.test/v1/fe/site/by-address").mock(
+        side_effect=httpx.ReadTimeout("timed out")
+    )
+    res = client.post(
+        "/v1/data-proxy/passthrough/fe/site/by-address",
+        json={"address": "200 Williams Dr, Georgetown, TX"},
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 504
+    detail = res.json()["detail"]
+    assert "timed out" in detail.lower()
+    assert "by-address" in detail
+
+
+@respx.mock
+def test_passthrough_connect_error_returns_502(client: TestClient) -> None:
+    """Upstream connect failure must become a clean 502 for the FE."""
+    tenant_id = _bootstrap(client, "user-a")
+    respx.get("http://data.test/v1/sections/flood/facts/ent-1").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    res = client.get(
+        "/v1/data-proxy/passthrough/sections/flood/facts/ent-1",
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 502
+    assert "Cannot reach the data API" in res.json()["detail"]
 
 
 @respx.mock

@@ -216,12 +216,12 @@ def _strip_md_bold(text: str) -> str:
 
 
 def _parcel_id_value(state: ProjectState, fields: dict[str, str], site_payload: dict[str, Any]) -> str:
-    if state.tcad_prop_id is not None:
-        return str(state.tcad_prop_id)
+    if state.cad_prop_id is not None:
+        return str(state.cad_prop_id)
     picked = _pick(
         fields,
         "parcel_id",
-        "tcad_prop_id",
+        "cad_prop_id",
         "property_id",
         "PROP_ID",
         default="",
@@ -511,10 +511,10 @@ def build_export_context(
         "existing_development": _pick(
             fields, "existing_development", "existing_land_use", "LAND_USE", "land_use"
         ),
-        "tcad_info": _pick(
-            fields, "tcad_info", "legal_desc", "legal_description", "LEGAL_DESCRIPTION"
+        "cad_info": _pick(
+            fields, "cad_info", "legal_desc", "legal_description", "LEGAL_DESCRIPTION"
         ),
-        "tcad_discrepancies": _pick(fields, "tcad_discrepancies"),
+        "cad_discrepancies": _pick(fields, "cad_discrepancies"),
         "adjacent_props": _strip_md_bold(
             bodies.get("parcel") or _pick(fields, "adjacent_props")
         ),

@@ -10,6 +10,7 @@ include_pii=False (the DataProxyClient default). Revisit once Cognito auth is li
 
 from typing import Annotated, Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
@@ -17,16 +18,23 @@ from civilai_platform.api.deps import tenant_ctx
 from civilai_platform.auth.authz import require_membership
 from civilai_platform.auth.context import AuthContext
 from civilai_platform.models.entities import Role
-from civilai_platform.services.data_proxy import DataProxyClient
+from civilai_platform.services.data_proxy import DataProxyClient, passthrough_timeout_sec
 from civilai_platform.services.data_routing import data_api_base_for_request
 
 router = APIRouter(prefix="/v1/data-proxy", tags=["data-proxy"])
 
 # Read-only site-data families the browser is allowed to reach through the proxy. The
 # FE's staged site flow (resolve-address -> per-section facts -> assemble, plus the
-# by-address/by-parcel single-shot fallbacks) all live under these two prefixes; nothing
-# here mutates lake data or touches the experimental LLM/admin surfaces.
-_PASSTHROUGH_ALLOWED_PREFIXES = ("fe/site/", "fe/tap-cards/", "sections/")
+# by-address/by-parcel single-shot fallbacks) all live under these prefixes; Explorer
+# also needs tiles + serving freshness. Nothing here mutates lake data or touches
+# the experimental LLM/admin surfaces.
+_PASSTHROUGH_ALLOWED_PREFIXES = (
+    "fe/site/",
+    "fe/tap-cards/",
+    "fe/tiles/",
+    "fe/serving/",
+    "sections/",
+)
 
 
 def _viewer_ctx(ctx: Annotated[AuthContext, Depends(tenant_ctx)]) -> AuthContext:
@@ -94,6 +102,9 @@ async def passthrough(
     allowlisted set of read paths server-side with the service key, viewer-gated and
     PII off, mirroring the upstream status/body so the FE's 409/404/503 handling is
     unchanged.
+
+    Upstream timeouts / connection failures become 504 / 502 with a JSON ``detail``
+    string the FE already surfaces — never an unhandled ASGI 500 stack trace.
     """
     if ".." in data_path or not data_path.startswith(_PASSTHROUGH_ALLOWED_PREFIXES):
         raise HTTPException(403, "Path not allowed through the data proxy")
@@ -107,7 +118,26 @@ async def passthrough(
                 body = _json.loads(raw)
             except ValueError as exc:
                 raise HTTPException(400, "Request body must be JSON") from exc
-    upstream = client.passthrough(request.method, data_path, json=body)
+    try:
+        upstream = client.passthrough(request.method, data_path, json=body)
+    except httpx.TimeoutException as exc:
+        budget = passthrough_timeout_sec(data_path)
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"Data API timed out after {budget:.0f}s while handling "
+                f"{request.method} /v1/{data_path.lstrip('/')}. "
+                "Try again, or search with a CAD parcel ID if the address is slow."
+            ),
+        ) from exc
+    except httpx.TransportError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Cannot reach the data API for {request.method} "
+                f"/v1/{data_path.lstrip('/')}: {exc}"
+            ),
+        ) from exc
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,

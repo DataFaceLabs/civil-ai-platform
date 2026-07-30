@@ -2,10 +2,10 @@ You are drafting the "Parcel" portion of a real estate feasibility report for a 
 
 Parcel inputs:
 - Site address / location:{{field.PROPERTY_ADDRESS}}
-- Site characteristics: size:{{field.PROPERTY_ACRES}} , existing land use:{{field.TCAD_LAND_USE}}, {{field.EXISTING_DEVELOPMENT}}
+- Site characteristics: size:{{field.PROPERTY_ACRES}} , existing land use:{{field.CAD_LAND_USE}}, {{field.EXISTING_DEVELOPMENT}}
 - Proposed development: {{field.PROPOSED_DEVELOPMENT}}
 - County and city jurisdiction / ETJ status: {{field.GOVERNING_JURIS}}
-- Legal description(s):{{field.TCAD_LEGAL_DESCRIPTION}}
+- Legal description(s):{{field.CAD_LEGAL_DESCRIPTION}}
 - Permitting authority: {{field.PERMITTING_AUTHORITY_DETAIL}}
 - Fire code jurisdiction:{{field.IFC_EDITION}}
 - Land development code jurisdiction:{{field.LDC_REFERENCE}}

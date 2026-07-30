@@ -10,8 +10,17 @@ import httpx
 from civilai_platform.settings import get_settings
 
 _DEFAULT_TIMEOUT_SEC = 30.0
+# Address/parcel site lookups hit live geocoders + CAD ArcGIS; Williams Dr
+# envelope ambiguity routinely exceeds the default 30s proxy budget.
+_DEFAULT_SITE_PASSTHROUGH_TIMEOUT_SEC = 90.0
 _DEFAULT_LLM_INVOKE_TIMEOUT_SEC = 180.0
 _DEFAULT_DRAFT_LLM_INVOKE_TIMEOUT_SEC = 660.0
+
+_SITE_PASSTHROUGH_SUFFIXES = (
+    "fe/site/resolve-address",
+    "fe/site/by-address",
+    "fe/site/by-parcel",
+)
 
 
 def _read_timeout_env(name: str, default: float) -> float:
@@ -22,6 +31,29 @@ def _read_timeout_env(name: str, default: float) -> float:
         return max(float(raw), 1.0)
     except ValueError:
         return default
+
+
+def passthrough_timeout_sec(data_path: str) -> float:
+    """Timeout for status-preserving passthrough calls.
+
+    FE site address/parcel resolution hits live geocoders + CAD ArcGIS and can
+    exceed the default 30s budget (override with
+    CIVILAI_DATA_SITE_PASSTHROUGH_TIMEOUT_SEC). Everything else uses
+    CIVILAI_DATA_PASSTHROUGH_TIMEOUT_SEC / 30s.
+    """
+    normalized = data_path.lstrip("/")
+    if any(
+        normalized == suffix or normalized.startswith(f"{suffix}/")
+        for suffix in _SITE_PASSTHROUGH_SUFFIXES
+    ):
+        return _read_timeout_env(
+            "CIVILAI_DATA_SITE_PASSTHROUGH_TIMEOUT_SEC",
+            _DEFAULT_SITE_PASSTHROUGH_TIMEOUT_SEC,
+        )
+    return _read_timeout_env(
+        "CIVILAI_DATA_PASSTHROUGH_TIMEOUT_SEC",
+        _DEFAULT_TIMEOUT_SEC,
+    )
 
 
 def llm_invoke_timeout_sec(*, step_key: str | None = None) -> float:
@@ -123,16 +155,27 @@ class DataProxyClient:
             ) from exc
 
     def passthrough(
-        self, method: str, data_path: str, *, json: dict[str, Any] | None = None
+        self,
+        method: str,
+        data_path: str,
+        *,
+        json: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> httpx.Response:
         """Forward a read request to the data API and return the raw response.
 
         Unlike ``request``, this does NOT raise on non-2xx -- the caller mirrors the
         upstream status/body verbatim so the FE's status-based logic (409 ambiguous
         address, 404/503 -> skip section) keeps working through the proxy.
+
+        Raises ``httpx.TimeoutException`` / ``httpx.TransportError`` so the route
+        can map them to a clean 504/502 instead of an unhandled ASGI 500.
         """
         url = f"{self.base_url}/v1/{data_path.lstrip('/')}"
-        with httpx.Client(timeout=self.timeout) as client:
+        effective_timeout = (
+            passthrough_timeout_sec(data_path) if timeout is None else timeout
+        )
+        with httpx.Client(timeout=effective_timeout) as client:
             return client.request(method, url, headers=self._headers(), json=json)
 
     def get_section_facts(self, entity_id: str, section_id: str) -> dict[str, Any]:

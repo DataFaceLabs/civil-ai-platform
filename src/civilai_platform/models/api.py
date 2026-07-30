@@ -359,7 +359,7 @@ class ProjectStatePatch(BaseModel):
     parcel: dict | None = None
     site_payload: dict | None = None
     site_context: dict[str, FieldValue] | None = None
-    tcad_prop_id: int | None = None
+    cad_prop_id: int | None = None
     client_contacts: list[ClientContact] | None = None
     client_notes: list[ClientNote] | None = None
     references: list[dict] | None = None
@@ -377,7 +377,7 @@ class ProjectStateResponse(BaseModel):
     parcel: dict | None
     site_payload: dict | None
     site_context: dict[str, FieldValue] | None
-    tcad_prop_id: int | None
+    cad_prop_id: int | None
     client_contacts: list[ClientContact]
     client_notes: list[ClientNote]
     references: list[dict]

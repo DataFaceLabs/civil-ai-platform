@@ -223,9 +223,9 @@ def cmd_replay(args: argparse.Namespace) -> int:
             fc = ic.get("field_context") or {}
             ao = rec.get("agent_output") or {}
             addr = fc.get("PROPERTY_ADDRESS")
-            tcad = fc.get("TCAD_INFO")
+            tcad = fc.get("CAD_INFO")
             print(f"INITIATE  address={addr!r}")
-            print(f"INITIATE  tcad_info={_clip(tcad, 120)!r}")
+            print(f"INITIATE  cad_info={_clip(tcad, 120)!r}")
             print(f"INITIATE  field_context_keys={len(fc)}  sample={sorted(fc)[:8]}")
             print("SECTION PROMPT (request):")
             print(textwrap.indent(str(ic.get("request") or "")[:1500], "  "))

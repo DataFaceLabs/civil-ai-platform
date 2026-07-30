@@ -270,12 +270,12 @@ def main() -> int:
         geom = site_payload.get("geometry") or {}
         geom_props = (geom.get("properties") if isinstance(geom, dict) else None) or {}
         parcel_id = geom_props.get("source_parcel_id") or geom_props.get("parcel_id")
-        tcad_info = field_context.get("TCAD_INFO", "")
+        cad_info = field_context.get("CAD_INFO", "")
 
         print(f"✓ data pull  field_context_keys={len(field_context)}")
         print(f"  address={field_context.get('PROPERTY_ADDRESS')!r}")
         print(f"  parcel_id={parcel_id!r}")
-        print(f"  tcad_info={tcad_info[:100]!r}")
+        print(f"  cad_info={cad_info[:100]!r}")
         if len(field_context) < MIN_FIELD_CONTEXT_KEYS:
             return _fail(
                 f"data pull too thin ({len(field_context)} keys < {MIN_FIELD_CONTEXT_KEYS})"
@@ -358,9 +358,9 @@ def main() -> int:
             addr = fc.get("PROPERTY_ADDRESS") or ""
             if "trappers" not in addr.lower():
                 return _fail(f"{section}: PROPERTY_ADDRESS missing/wrong: {addr!r}")
-            if not (fc.get("TCAD_INFO") or parcel_id):
-                return _fail(f"{section}: neither TCAD_INFO nor parcel_id present")
-            if parcel_id and "870361" not in str(parcel_id) and "870361" not in str(fc.get("TCAD_INFO") or ""):
+            if not (fc.get("CAD_INFO") or parcel_id):
+                return _fail(f"{section}: neither CAD_INFO nor parcel_id present")
+            if parcel_id and "870361" not in str(parcel_id) and "870361" not in str(fc.get("CAD_INFO") or ""):
                 # Soft signal only when we know this fixture's prop id.
                 print(f"  ! parcel_id unexpected: {parcel_id!r}")
             if len(fc) < MIN_FIELD_CONTEXT_KEYS:
@@ -442,7 +442,7 @@ def main() -> int:
         ).json()
         sections = list(state.get("sections") or [])
         parcel = _ensure_section(sections, "parcel", "Parcel")
-        edit2 = edit1 + "\n<p>SME edit #2 — add TCAD valuation note.</p>"
+        edit2 = edit1 + "\n<p>SME edit #2 — add CAD valuation note.</p>"
         parcel["body"] = edit2
         parcel["status"] = "in_review"
         client.patch(

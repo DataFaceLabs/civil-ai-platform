@@ -8867,7 +8867,7 @@
             ],
             "title": "Site Context"
           },
-          "tcad_prop_id": {
+          "cad_prop_id": {
             "anyOf": [
               {
                 "type": "integer"
@@ -8876,7 +8876,7 @@
                 "type": "null"
               }
             ],
-            "title": "Tcad Prop Id"
+            "title": "Cad Prop Id"
           },
           "client_contacts": {
             "anyOf": [
@@ -9029,7 +9029,7 @@
             ],
             "title": "Site Context"
           },
-          "tcad_prop_id": {
+          "cad_prop_id": {
             "anyOf": [
               {
                 "type": "integer"
@@ -9038,7 +9038,7 @@
                 "type": "null"
               }
             ],
-            "title": "Tcad Prop Id"
+            "title": "Cad Prop Id"
           },
           "client_contacts": {
             "items": {
@@ -9096,7 +9096,7 @@
           "parcel",
           "site_payload",
           "site_context",
-          "tcad_prop_id",
+          "cad_prop_id",
           "client_contacts",
           "client_notes",
           "references",

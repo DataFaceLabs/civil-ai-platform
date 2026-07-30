@@ -21,7 +21,7 @@ Identify which framework governs the cap for this parcel (zoning-based, watershe
 
 Impervious cover limit — State the single controlling maximum impervious cover percentage: take the more restrictive of the zoning-family cap and the watershed-tier cap, and say which one is driving the result. If no percentage cap applies, state that directly instead of inventing one.
 
-Platting status — State whether the property is platted, unplatted, or has a platting history(first platted / replatted / amended, with years). List each tract's legal description(s):{{field.TCAD_LEGAL_DESCRIPTION}}
+Platting status — State whether the property is platted, unplatted, or has a platting history(first platted / replatted / amended, with years). List each tract's legal description(s):{{field.CAD_LEGAL_DESCRIPTION}}
 
 Watershed classification — Name the watershed(s) the site falls in and the regulatory tier assigned by the governing authority (e.g., Urban, Suburban, Water Supply Rural), or state that no watershed ordinance/tier applies. Note any tier change triggered by annexation/de-annexation/ETJ release.
 
