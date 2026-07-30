@@ -162,3 +162,68 @@ def test_section_draft_resolves_prompt_lab_config_before_agent(client: TestClien
     assert len(draft_events) == 1
     assert draft_events[0]["event_id"] == body["run_id"]
     assert draft_events[0]["section_id"] == "zoning"
+
+
+def test_section_draft_resolves_entity_id_from_project_address(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Projects saved without site_payload.entity_id still draft when address is unique."""
+    captured: dict[str, object] = {}
+
+    def _fake_agent(context_payload: dict, *, dry_run: bool) -> dict:
+        captured["entity_id"] = context_payload.get("entity_id")
+        return {
+            "message": "Draft complete.",
+            "artifacts": [],
+            "trace_summary": {"tools_used": []},
+            "guardrail_warnings": [],
+        }
+
+    class _FakeProxy:
+        def __init__(self, *, base_url: str | None = None) -> None:
+            self.base_url = base_url
+
+        def resolve_site_address(self, address: str) -> dict:
+            assert "Spyglass" in address
+            return {"entity_id": "186e4007-021c-b65d-a67a-0ac73dec97a9"}
+
+    monkeypatch.setattr(
+        "civilai_platform.services.agent_run._invoke_strands_agent",
+        _fake_agent,
+    )
+    monkeypatch.setattr(
+        "civilai_platform.services.data_proxy.DataProxyClient",
+        _FakeProxy,
+    )
+
+    user_id = "user-agent-entity"
+    bootstrap = bootstrap_client_user(
+        client,
+        user_id,
+        email="agent-entity@example.com",
+        name="Entity Firm",
+    )
+    tenant_id = bootstrap["memberships"][0]["tenant_id"]
+    headers = {"X-Dev-User-Id": user_id, "X-Tenant-Id": tenant_id}
+    project = client.post(
+        "/v1/projects",
+        json={"name": "Spyglass", "address": "1300 Spyglass Dr, Austin, TX 78746"},
+        headers=headers,
+    )
+    assert project.status_code == 201
+    project_id = project.json()["project_id"]
+
+    run = client.post(
+        f"/v1/projects/{project_id}/agent-runs",
+        json={
+            "request": "Generate the parcel section draft.",
+            "workflow": "section_draft",
+            "active_section_id": "parcel",
+            "mode": "generate",
+            "field_context": {"PROPERTY_ACRES": "17.28"},
+        },
+        headers=headers,
+    )
+    assert run.status_code == 201
+    assert run.json()["status"] == "succeeded"
+    assert captured["entity_id"] == "186e4007-021c-b65d-a67a-0ac73dec97a9"
