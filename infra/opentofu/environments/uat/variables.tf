@@ -164,6 +164,12 @@ variable "ses_from_email" {
   description = "Verified SES sender for Cognito emails (password reset/invites); empty = Cognito default sender."
 }
 
+variable "alarm_notification_email" {
+  type        = string
+  default     = ""
+  description = "Email subscribed to the CloudWatch alerts SNS topic (H3-ALARM); empty = alarms exist but nothing is notified."
+}
+
 variable "fe_github_repository_url" {
   type    = string
   default = "https://github.com/DataFaceLabs/civil-ai-fe"
