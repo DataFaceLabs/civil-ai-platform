@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,21 @@ from civilai_platform.store import get_store
 
 # Any localhost port — covers Vite (5173/3000), Lovable sandbox (8080/8081), etc.
 _LOCALHOST_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+
+
+def _git_sha() -> str:
+    """The commit scripts/package-lambda.sh zipped, or "unknown" if absent.
+
+    H3-DRIFT: baked into the deployment zip at package time (not a Terraform
+    env var -- see package-lambda.sh for why), so deploy-uat.sh status can
+    compare what's actually running against origin/main without console/API
+    access to Lambda's own configuration.
+    """
+    sha_file = Path(__file__).with_name("_git_sha.txt")
+    try:
+        return sha_file.read_text(encoding="utf-8").strip() or "unknown"
+    except OSError:
+        return "unknown"
 
 
 def create_app() -> FastAPI:
@@ -51,6 +67,6 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "service": "civilai-platform"}
+        return {"status": "ok", "service": "civilai-platform", "git_sha": _git_sha()}
 
     return app
