@@ -61,11 +61,49 @@ def _entity_id_from_state(store: PlatformStore, tenant_id: str, project_id: str)
     state = store.get_project_state(tenant_id, project_id)
     if not state:
         return None
-    site_payload = state.site_payload
-    if isinstance(site_payload, dict):
-        raw = site_payload.get("entity_id")
+    site_payload = state.site_payload if isinstance(state.site_payload, dict) else {}
+    for key in ("entity_id", "entityId"):
+        raw = site_payload.get(key)
         if raw is not None and str(raw).strip():
             return str(raw).strip()
+    parcel = state.parcel if isinstance(state.parcel, dict) else {}
+    for key in ("entity_id", "entityId"):
+        raw = parcel.get(key)
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+    return None
+
+
+def _resolve_entity_id_via_data_api(
+    *,
+    address: str | None,
+    data_api_base: str | None,
+) -> str | None:
+    """Best-effort lake entity lookup when the project snapshot omitted entity_id.
+
+    Older SitePayload responses (and by-parcel candidate picks) sometimes stored
+    facts without stamping ``entity_id``. Section draft needs that id; re-resolve
+    from the project address when the data API can uniquely match it.
+    """
+    trimmed = (address or "").strip()
+    if not trimmed:
+        return None
+    try:
+        from civilai_platform.services.data_proxy import DataProxyClient
+
+        client = DataProxyClient(base_url=data_api_base)
+        payload = client.resolve_site_address(trimmed)
+    except Exception:
+        logger.info(
+            "Could not resolve entity_id from project address for drafting",
+            exc_info=True,
+        )
+        return None
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("entity_id")
+    if raw is not None and str(raw).strip():
+        return str(raw).strip()
     return None
 
 
@@ -174,6 +212,7 @@ def _build_context_payload(
     mode: str,
     user_guidance: str | None,
     fields_unchanged: bool,
+    data_api_base: str | None = None,
 ) -> dict[str, Any]:
     tenant_llm_response = llm_config_svc.get_tenant_llm_response(store, tenant_id)
     tenant_llm = tenant_llm_response.config
@@ -185,6 +224,15 @@ def _build_context_payload(
     canonical = (project.address or "").strip() if project else ""
     if canonical:
         resolved_field_context["PROPERTY_ADDRESS"] = canonical
+    if (
+        not resolved_entity_id
+        and workflow == "section_draft"
+        and canonical
+    ):
+        resolved_entity_id = _resolve_entity_id_via_data_api(
+            address=canonical,
+            data_api_base=data_api_base,
+        )
     chat_system_prompt, chat_instructions = resolve_chat_prompts(tenant_llm)
     request = request_text
     system_prompt = ""
@@ -436,6 +484,7 @@ def start_agent_run(
         mode=mode,
         user_guidance=user_guidance,
         fields_unchanged=fields_unchanged,
+        data_api_base=data_api_base,
     )
     if data_api_base:
         context_payload["_data_api_base"] = data_api_base

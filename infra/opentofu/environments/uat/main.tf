@@ -50,42 +50,42 @@ module "secrets" {
   environment         = var.environment
   mapbox_access_token = var.mapbox_access_token
   github_access_token = var.github_access_token
-  tavily_api_key       = var.tavily_api_key
+  tavily_api_key      = var.tavily_api_key
 }
 
 module "cognito" {
   count  = var.create_platform_persistence ? 1 : 0
   source = "../../modules/cognito"
 
-  environment     = var.environment
-  aws_region      = var.aws_region
-  callback_urls   = var.cognito_callback_urls
-  logout_urls     = var.cognito_logout_urls
-  ses_from_email  = var.ses_from_email
+  environment    = var.environment
+  aws_region     = var.aws_region
+  callback_urls  = var.cognito_callback_urls
+  logout_urls    = var.cognito_logout_urls
+  ses_from_email = var.ses_from_email
 }
 
 module "bedrock" {
-  count  = var.create_platform_persistence || var.create_platform_http_api ? 1 : 0
-  source = "../../modules/bedrock"
+  count       = var.create_platform_persistence || var.create_platform_http_api ? 1 : 0
+  source      = "../../modules/bedrock"
   environment = var.environment
 }
 
 module "dynamodb" {
-  count  = var.create_platform_persistence ? 1 : 0
-  source = "../../modules/dynamodb"
+  count       = var.create_platform_persistence ? 1 : 0
+  source      = "../../modules/dynamodb"
   environment = var.environment
 }
 
 module "s3_app" {
-  count  = var.create_platform_persistence ? 1 : 0
-  source = "../../modules/s3"
-  environment = var.environment
+  count        = var.create_platform_persistence ? 1 : 0
+  source       = "../../modules/s3"
+  environment  = var.environment
   cors_origins = var.cors_origins
 }
 
 module "s3_agent_corpus" {
-  count  = var.create_platform_persistence ? 1 : 0
-  source = "../../modules/s3-agent-corpus"
+  count       = var.create_platform_persistence ? 1 : 0
+  source      = "../../modules/s3-agent-corpus"
   environment = var.environment
 }
 
@@ -138,8 +138,9 @@ module "observability" {
   count  = var.create_platform_http_api ? 1 : 0
   source = "../../modules/observability"
 
-  environment          = var.environment
-  lambda_function_name = module.api_gateway[0].lambda_function_name
+  environment              = var.environment
+  lambda_function_name     = module.api_gateway[0].lambda_function_name
+  alarm_notification_email = var.alarm_notification_email
 }
 
 module "agentcore" {
