@@ -73,6 +73,24 @@ jobs:
           aws-region: us-east-1
           role-session-name: drift-detection
 
+      - name: Pull environment config from SSM
+        # terraform.tfvars is gitignored (it holds real tokens) and SSM is its
+        # source of truth. Without this the plan runs on defaults that differ
+        # from reality for 8 of 16 variables -- including feature toggles whose
+        # defaults would make it propose destroying live modules.
+        run: ./scripts/tofu-config.sh pull uat
+
+      - name: Stub the Lambda package
+        # The api-gateway module calls filebase64sha256() on this path, so the
+        # file must EXIST at plan time -- but the resource sets
+        # `lifecycle { ignore_changes = [filename, source_code_hash] }`, so its
+        # contents cannot affect the plan. A placeholder is therefore exact, not
+        # an approximation, and avoids a 50 MB build on every drift run.
+        run: |
+          mkdir -p infra/dist
+          [ -f infra/dist/platform-lambda.zip ] || \
+            printf 'drift-check placeholder' > infra/dist/platform-lambda.zip
+
       - name: tofu init
         working-directory: infra/opentofu/environments/uat
         run: tofu init -input=false -no-color

@@ -141,6 +141,40 @@ resource "aws_iam_role_policy" "ci_drift_deny_writes" {
   policy = data.aws_iam_policy_document.ci_drift_deny_writes.json
 }
 
+# The drift check pulls environment config from SSM (see scripts/tofu-config.sh):
+# without it, 8 of 16 variables fall back to defaults that differ from reality and
+# the plan proposes destroying live modules. ReadOnlyAccess grants ssm:GetParameter
+# but deliberately NOT kms:Decrypt, which a SecureString needs -- hence this.
+#
+# Note this lets CI read the two tokens in that blob. That is not a new exposure:
+# the role can already read Terraform state, which holds the same values in
+# plaintext. Reducing both is the same piece of work (get secrets out of state),
+# tracked separately. Scoped to this one parameter path regardless.
+data "aws_iam_policy_document" "ci_drift_config_read" {
+  statement {
+    effect    = "Allow"
+    actions   = ["ssm:GetParameter", "ssm:GetParameters"]
+    resources = ["arn:aws:ssm:*:*:parameter/civilai/${var.environment}/tofu/*"]
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["ssm.${var.aws_region}.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "ci_drift_config_read" {
+  name   = "${var.environment}-civilai-ci-drift-config-read"
+  role   = aws_iam_role.ci_drift.id
+  policy = data.aws_iam_policy_document.ci_drift_config_read.json
+}
+
 output "ci_drift_role_arn" {
   value       = aws_iam_role.ci_drift.arn
   description = "Assume-role ARN for the scheduled drift-detection workflow."
