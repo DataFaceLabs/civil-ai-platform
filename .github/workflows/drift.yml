@@ -1,0 +1,82 @@
+# Infrastructure drift detection (H0-IACDRIFT).
+#
+# On 2026-08-01 six production problems were found in one session, all of the same
+# shape: merged to git, downstream action never run. Two were Terraform merged but
+# never applied -- one caused a customer-facing outage, and a bare `tofu apply`
+# would have replaced the Amplify app serving www.civil1.ai. Nothing was watching.
+# This is what watches.
+#
+# Deliberately consumes ONLY the exit code of `tofu plan -detailed-exitcode`:
+#   0 = in sync   1 = error   2 = drift
+# Plan output is never printed, uploaded, or kept, because Terraform state (and
+# therefore plan output) contains secrets in plaintext. When this fails, a human
+# runs `tofu plan` locally to see what drifted.
+name: drift
+
+on:
+  schedule:
+    # 13:00 UTC daily (~08:00 America/Chicago) -- lands before the working day so
+    # drift introduced yesterday is visible before anyone deploys on top of it.
+    - cron: "0 13 * * *"
+  workflow_dispatch: {}
+
+# Required for GitHub to mint the OIDC token the AWS role trusts.
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: drift
+  cancel-in-progress: false
+
+jobs:
+  iac-drift:
+    name: "tofu plan drift (uat)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.8.2"
+
+      - name: Assume read-only drift role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Created by infra/opentofu/environments/uat/ci_oidc.tf.
+          # Trust is pinned to this repo + refs/heads/main; PRs cannot assume it.
+          #
+          # Defaulted rather than required-as-a-secret on purpose: a role ARN is not
+          # a secret (the account id is already in infra/opentofu/README.md), and a
+          # secret someone must remember to set is itself an instance of the
+          # "merged but the manual step never ran" class this workflow exists to
+          # catch. Override with a repo variable if the ARN ever changes.
+          role-to-assume: ${{ vars.AWS_DRIFT_ROLE_ARN || 'arn:aws:iam::379604374458:role/uat-civilai-ci-drift' }}
+          aws-region: us-east-1
+          role-session-name: drift-detection
+
+      - name: tofu init
+        working-directory: infra/opentofu/environments/uat
+        run: tofu init -input=false -no-color
+
+      - name: Detect drift
+        id: plan
+        working-directory: infra/opentofu/environments/uat
+        run: |
+          set +e
+          # -lock=false: this is read-only, and taking the state lock would need
+          # DynamoDB write permission the role deliberately does not have.
+          # Output is discarded on purpose -- see the header note about secrets.
+          tofu plan -input=false -no-color -detailed-exitcode -lock=false > /dev/null 2>&1
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0) echo "::notice title=No drift::uat matches the committed configuration." ;;
+            2) echo "::error title=INFRASTRUCTURE DRIFT::uat has drifted from the committed Terraform. Run 'tofu plan' in infra/opentofu/environments/uat locally to see what changed. Plan output is intentionally not shown here (state contains secrets)." ;;
+            *) echo "::error title=Drift check failed::tofu plan could not complete (exit $code) -- likely a permissions or backend problem, not drift itself." ;;
+          esac
+
+      - name: Fail on drift
+        if: steps.plan.outputs.exit_code != '0'
+        run: exit 1
