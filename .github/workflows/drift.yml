@@ -108,9 +108,19 @@ jobs:
           # NOT discarded: Terraform writes permission/backend errors there, and
           # those carry no resource values. Without this, a failing check is
           # undiagnosable -- which is exactly what happened on the first run.
-          tofu plan -input=false -no-color -detailed-exitcode -lock=false > /dev/null
+          tofu plan -input=false -no-color -detailed-exitcode -lock=false > /tmp/plan.txt 2>/tmp/plan.err
           code=$?
           set -e
+          # Emit ONLY the summary line ("Plan: N to add, ...") and any stderr.
+          # Counts and error text carry no resource values; the diff body, which
+          # can echo values out of state, is never shown. Without this a
+          # disagreement between CI and a local plan is undiagnosable -- which is
+          # exactly what happened when CI reported "no drift" while local
+          # reported 2 add / 6 change.
+          grep -E "^(Plan:|No changes|Error:)" /tmp/plan.txt || true
+          [ -s /tmp/plan.err ] && cat /tmp/plan.err || true
+          echo "caller identity:"
+          aws sts get-caller-identity --query 'Arn' --output text || true
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           case "$code" in
             0) echo "::notice title=No drift::uat matches the committed configuration." ;;
