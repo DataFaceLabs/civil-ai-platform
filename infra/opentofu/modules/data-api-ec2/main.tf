@@ -193,6 +193,24 @@ data "aws_iam_policy_document" "ec2" {
       "${aws_cloudwatch_log_group.data_api.arn}:*",
     ]
   }
+
+  # civil-ai's deploy-uat.sh probes for this log group before passing
+  # --log-driver awslogs, so that a deploy still works when the group does not
+  # exist yet (that probe exists because hardcoding the flag against unapplied
+  # IAM took the data API down on 2026-08-01). The probe runs ON the instance,
+  # under this role -- and without DescribeLogGroups it gets AccessDenied,
+  # reads that as "absent", and silently falls back to the json-file driver
+  # forever. Observed exactly that on 2026-08-02: the group existed and log
+  # shipping still never activated.
+  #
+  # Separate statement because DescribeLogGroups is a list operation and does
+  # not accept the ":*" log-stream ARN form used above.
+  statement {
+    sid       = "DataApiLogsDiscover"
+    effect    = "Allow"
+    actions   = ["logs:DescribeLogGroups"]
+    resources = ["*"]
+  }
 }
 
 # H3-ALARM: receives the container's stdout via the Docker awslogs log

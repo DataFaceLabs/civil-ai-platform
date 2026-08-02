@@ -98,6 +98,27 @@ case "${1:-}" in
     tmp="$(mktemp)"
     trap 'rm -f "$tmp"' EXIT
     fetch >"$tmp"
+    # Refuse to silently destroy local edits. On 2026-08-02 a pull overwrote
+    # cors_origins entries that had been added locally but not yet pushed --
+    # they were only recovered because a pre-apply check noticed the values
+    # missing from the plan. An unpushed local edit is indistinguishable from
+    # an intentional one, so this stops and lets a human decide.
+    if [[ -f "$TFVARS" ]] && ! diff -q "$tmp" "$TFVARS" >/dev/null 2>&1; then
+      if [[ "${FORCE:-0}" != "1" ]]; then
+        backup="${TFVARS}.local.$(date +%Y%m%d%H%M%S)"
+        cp "$TFVARS" "$backup"
+        echo "REFUSING to overwrite: local tfvars differs from ${PARAM_NAME}." >&2
+        echo "  Local copy saved to: $backup" >&2
+        echo "  Keys differing (values withheld):" >&2
+        diff <(grep -oE '^[a-z_]+' "$tmp" | sort -u) \
+             <(grep -oE '^[a-z_]+' "$TFVARS" | sort -u) >&2 || true
+        echo >&2
+        echo "  If the local edits should win:  $0 push ${ENVIRONMENT}" >&2
+        echo "  If SSM should win:              FORCE=1 $0 pull ${ENVIRONMENT}" >&2
+        exit 1
+      fi
+      echo "FORCE=1 -- overwriting local tfvars with the SSM copy."
+    fi
     # Written atomically so an interrupted pull cannot leave a half-file that
     # plans against partial config.
     mv -f "$tmp" "$TFVARS"
