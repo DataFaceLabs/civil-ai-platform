@@ -39,7 +39,13 @@ resource "aws_s3_bucket_cors_configuration" "data_lake" {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "PUT", "HEAD"]
     allowed_origins = var.cors_origins
-    expose_headers  = ["ETag"]
+    # Range headers are required, not cosmetic: PMTiles fetches map tiles as HTTP
+    # byte ranges, and a browser cannot read the response without Accept-Ranges /
+    # Content-Range / Content-Length being exposed. These were set directly on the
+    # bucket during the 2026-07-24 PMTiles work and never recorded here, so a
+    # `tofu apply` would have silently reverted them and broken Explorer overlays.
+    # Found 2026-08-02 by the H0-IACDRIFT check.
+    expose_headers  = ["ETag", "Accept-Ranges", "Content-Range", "Content-Length", "Content-Type"]
     max_age_seconds = 3600
   }
 }
