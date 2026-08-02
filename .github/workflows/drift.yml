@@ -111,6 +111,7 @@ jobs:
           tofu plan -input=false -no-color -detailed-exitcode -lock=false > /tmp/plan.txt 2>/tmp/plan.err
           code=$?
           set -e
+          echo "tofu plan exit code: ${code}"
           # Emit ONLY the summary line ("Plan: N to add, ...") and any stderr.
           # Counts and error text carry no resource values; the diff body, which
           # can echo values out of state, is never shown. Without this a
