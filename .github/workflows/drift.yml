@@ -13,29 +13,11 @@
 # runs `tofu plan` locally to see what drifted.
 name: drift
 
-# SCHEDULE INTENTIONALLY DISABLED -- see "Blocked on environment config" below.
-# Re-enable by uncommenting the cron once CI can plan with the real variable
-# values. Until then this runs only on demand, because a scheduled check that is
-# permanently red trains people to ignore it, and this one would be worse than
-# noisy: it would propose destroying modules (see below).
-#
-# Blocked on environment config
-# -----------------------------
-# `terraform.tfvars` is gitignored (correctly -- it holds github_access_token and
-# mapbox_access_token). Without it, 8 of 16 variables take defaults that differ
-# from reality, including the create_platform_persistence / create_platform_http_api
-# / create_amplify_app feature toggles that decide whether whole modules exist. A
-# plan under those defaults would report "destroy the Amplify app" as drift.
-#
-# Two ways to unblock, in preference order:
-#   1. Move environment config into SSM Parameter Store and read it via data
-#      sources, so CI and laptops share one source. Also retires the
-#      secrets-in-a-gitignored-laptop-file problem. The real fix.
-#   2. Store the tfvars blob as a repo secret and materialize it here before
-#      planning. Faster, but creates a second copy that can drift from the first.
 on:
-  # schedule:
-  #   - cron: "0 13 * * *"   # 13:00 UTC (~08:00 America/Chicago)
+  schedule:
+    # 13:00 UTC daily (~08:00 America/Chicago) -- lands before the working day so
+    # drift introduced yesterday is visible before anyone deploys on top of it.
+    - cron: "0 13 * * *"
   workflow_dispatch: {}
 
 # Required for GitHub to mint the OIDC token the AWS role trusts.
@@ -72,6 +54,24 @@ jobs:
           role-to-assume: ${{ vars.AWS_DRIFT_ROLE_ARN || 'arn:aws:iam::379604374458:role/uat-civilai-ci-drift' }}
           aws-region: us-east-1
           role-session-name: drift-detection
+
+      - name: Pull environment config from SSM
+        # terraform.tfvars is gitignored (it holds real tokens) and SSM is its
+        # source of truth. Without this the plan runs on defaults that differ
+        # from reality for 8 of 16 variables -- including feature toggles whose
+        # defaults would make it propose destroying live modules.
+        run: ./scripts/tofu-config.sh pull uat
+
+      - name: Stub the Lambda package
+        # The api-gateway module calls filebase64sha256() on this path, so the
+        # file must EXIST at plan time -- but the resource sets
+        # `lifecycle { ignore_changes = [filename, source_code_hash] }`, so its
+        # contents cannot affect the plan. A placeholder is therefore exact, not
+        # an approximation, and avoids a 50 MB build on every drift run.
+        run: |
+          mkdir -p infra/dist
+          [ -f infra/dist/platform-lambda.zip ] || \
+            printf 'drift-check placeholder' > infra/dist/platform-lambda.zip
 
       - name: tofu init
         working-directory: infra/opentofu/environments/uat
