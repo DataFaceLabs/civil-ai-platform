@@ -6,11 +6,14 @@
 # would have replaced the Amplify app serving www.civil1.ai. Nothing was watching.
 # This is what watches.
 #
-# Deliberately consumes ONLY the exit code of `tofu plan -detailed-exitcode`:
-#   0 = in sync   1 = error   2 = drift
-# Plan output is never printed, uploaded, or kept, because Terraform state (and
-# therefore plan output) contains secrets in plaintext. When this fails, a human
-# runs `tofu plan` locally to see what drifted.
+# Primary signal is `tofu plan -detailed-exitcode` (0 = in sync, 1 = error,
+# 2 = drift), cross-checked against the plan's summary line -- see "Detect drift".
+#
+# What is surfaced: the summary line ("Plan: N to add, ...") and stderr. Both are
+# counts and error text, never resource values. What is NOT surfaced: the plan's
+# diff body, because Terraform state -- and therefore that diff -- contains
+# secrets in plaintext. On drift, a human runs `tofu plan` locally to see what
+# changed.
 name: drift
 
 on:
@@ -38,7 +41,15 @@ jobs:
 
       - uses: opentofu/setup-opentofu@v1
         with:
-          tofu_version: "1.8.2"
+          tofu_version: "1.12.3"
+          # THE reason this check silently passed while uat was drifted.
+          # setup-opentofu defaults to installing a wrapper script around the
+          # binary, and the wrapper does not propagate -detailed-exitcode's
+          # exit 2 -- `tofu plan` reported "2 to add, 6 to change" on stdout
+          # while exiting 0. Same version exits 2 correctly when run directly.
+          # Verified: the runner installed 1.12.3 and STILL returned 0 until
+          # this was set, so the version was innocent.
+          tofu_wrapper: false
 
       - name: Assume read-only drift role
         uses: aws-actions/configure-aws-credentials@v4
@@ -90,9 +101,33 @@ jobs:
           # NOT discarded: Terraform writes permission/backend errors there, and
           # those carry no resource values. Without this, a failing check is
           # undiagnosable -- which is exactly what happened on the first run.
-          tofu plan -input=false -no-color -detailed-exitcode -lock=false > /dev/null
+          tofu plan -input=false -no-color -detailed-exitcode -lock=false > /tmp/plan.txt 2>/tmp/plan.err
           code=$?
           set -e
+          echo "tofu plan exit code: ${code}"
+
+          # Never trust the exit code alone. OpenTofu 1.8.2 returned 0 from
+          # -detailed-exitcode on a plan with 2 adds and 6 changes, which made
+          # this job pass while uat was drifted -- a silent false negative, the
+          # worst possible failure for a drift check. So the summary line is
+          # parsed as an independent signal and either saying "drift" wins.
+          summary="$(grep -E '^(Plan:|No changes)' /tmp/plan.txt | head -1 || true)"
+          if [ "$code" = "0" ] && [ -n "$summary" ] \
+             && ! printf '%s' "$summary" | grep -q '^No changes' \
+             && ! printf '%s' "$summary" | grep -q '^Plan: 0 to add, 0 to change, 0 to destroy'; then
+            echo "::warning title=Exit code disagreed with plan::tofu exited 0 but the plan reports changes. Trusting the plan. Check the pinned tofu version."
+            code=2
+          fi
+          # Emit ONLY the summary line ("Plan: N to add, ...") and any stderr.
+          # Counts and error text carry no resource values; the diff body, which
+          # can echo values out of state, is never shown. Without this a
+          # disagreement between CI and a local plan is undiagnosable -- which is
+          # exactly what happened when CI reported "no drift" while local
+          # reported 2 add / 6 change.
+          grep -E "^(Plan:|No changes|Error:)" /tmp/plan.txt || true
+          [ -s /tmp/plan.err ] && cat /tmp/plan.err || true
+          echo "caller identity:"
+          aws sts get-caller-identity --query 'Arn' --output text || true
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           case "$code" in
             0) echo "::notice title=No drift::uat matches the committed configuration." ;;
