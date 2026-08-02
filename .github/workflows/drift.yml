@@ -41,11 +41,15 @@ jobs:
 
       - uses: opentofu/setup-opentofu@v1
         with:
-          # Pinned to a version verified to return 2 from -detailed-exitcode.
-          # 1.8.2 returned 0 despite a non-empty plan, which silently disabled
-          # this entire check -- it reported "no drift" while uat had 2 add /
-          # 6 change. The cross-check below is the belt to this braces.
           tofu_version: "1.12.3"
+          # THE reason this check silently passed while uat was drifted.
+          # setup-opentofu defaults to installing a wrapper script around the
+          # binary, and the wrapper does not propagate -detailed-exitcode's
+          # exit 2 -- `tofu plan` reported "2 to add, 6 to change" on stdout
+          # while exiting 0. Same version exits 2 correctly when run directly.
+          # Verified: the runner installed 1.12.3 and STILL returned 0 until
+          # this was set, so the version was innocent.
+          tofu_wrapper: false
 
       - name: Assume read-only drift role
         uses: aws-actions/configure-aws-credentials@v4
