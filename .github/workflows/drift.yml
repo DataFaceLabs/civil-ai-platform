@@ -6,36 +6,21 @@
 # would have replaced the Amplify app serving www.civil1.ai. Nothing was watching.
 # This is what watches.
 #
-# Deliberately consumes ONLY the exit code of `tofu plan -detailed-exitcode`:
-#   0 = in sync   1 = error   2 = drift
-# Plan output is never printed, uploaded, or kept, because Terraform state (and
-# therefore plan output) contains secrets in plaintext. When this fails, a human
-# runs `tofu plan` locally to see what drifted.
+# Primary signal is `tofu plan -detailed-exitcode` (0 = in sync, 1 = error,
+# 2 = drift), cross-checked against the plan's summary line -- see "Detect drift".
+#
+# What is surfaced: the summary line ("Plan: N to add, ...") and stderr. Both are
+# counts and error text, never resource values. What is NOT surfaced: the plan's
+# diff body, because Terraform state -- and therefore that diff -- contains
+# secrets in plaintext. On drift, a human runs `tofu plan` locally to see what
+# changed.
 name: drift
 
-# SCHEDULE INTENTIONALLY DISABLED -- see "Blocked on environment config" below.
-# Re-enable by uncommenting the cron once CI can plan with the real variable
-# values. Until then this runs only on demand, because a scheduled check that is
-# permanently red trains people to ignore it, and this one would be worse than
-# noisy: it would propose destroying modules (see below).
-#
-# Blocked on environment config
-# -----------------------------
-# `terraform.tfvars` is gitignored (correctly -- it holds github_access_token and
-# mapbox_access_token). Without it, 8 of 16 variables take defaults that differ
-# from reality, including the create_platform_persistence / create_platform_http_api
-# / create_amplify_app feature toggles that decide whether whole modules exist. A
-# plan under those defaults would report "destroy the Amplify app" as drift.
-#
-# Two ways to unblock, in preference order:
-#   1. Move environment config into SSM Parameter Store and read it via data
-#      sources, so CI and laptops share one source. Also retires the
-#      secrets-in-a-gitignored-laptop-file problem. The real fix.
-#   2. Store the tfvars blob as a repo secret and materialize it here before
-#      planning. Faster, but creates a second copy that can drift from the first.
 on:
-  # schedule:
-  #   - cron: "0 13 * * *"   # 13:00 UTC (~08:00 America/Chicago)
+  schedule:
+    # 13:00 UTC daily (~08:00 America/Chicago) -- lands before the working day so
+    # drift introduced yesterday is visible before anyone deploys on top of it.
+    - cron: "0 13 * * *"
   workflow_dispatch: {}
 
 # Required for GitHub to mint the OIDC token the AWS role trusts.
@@ -56,7 +41,11 @@ jobs:
 
       - uses: opentofu/setup-opentofu@v1
         with:
-          tofu_version: "1.8.2"
+          # Pinned to a version verified to return 2 from -detailed-exitcode.
+          # 1.8.2 returned 0 despite a non-empty plan, which silently disabled
+          # this entire check -- it reported "no drift" while uat had 2 add /
+          # 6 change. The cross-check below is the belt to this braces.
+          tofu_version: "1.12.3"
 
       - name: Assume read-only drift role
         uses: aws-actions/configure-aws-credentials@v4
@@ -112,6 +101,19 @@ jobs:
           code=$?
           set -e
           echo "tofu plan exit code: ${code}"
+
+          # Never trust the exit code alone. OpenTofu 1.8.2 returned 0 from
+          # -detailed-exitcode on a plan with 2 adds and 6 changes, which made
+          # this job pass while uat was drifted -- a silent false negative, the
+          # worst possible failure for a drift check. So the summary line is
+          # parsed as an independent signal and either saying "drift" wins.
+          summary="$(grep -E '^(Plan:|No changes)' /tmp/plan.txt | head -1 || true)"
+          if [ "$code" = "0" ] && [ -n "$summary" ] \
+             && ! printf '%s' "$summary" | grep -q '^No changes' \
+             && ! printf '%s' "$summary" | grep -q '^Plan: 0 to add, 0 to change, 0 to destroy'; then
+            echo "::warning title=Exit code disagreed with plan::tofu exited 0 but the plan reports changes. Trusting the plan. Check the pinned tofu version."
+            code=2
+          fi
           # Emit ONLY the summary line ("Plan: N to add, ...") and any stderr.
           # Counts and error text carry no resource values; the diff body, which
           # can echo values out of state, is never shown. Without this a
