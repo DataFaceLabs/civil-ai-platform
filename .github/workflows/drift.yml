@@ -66,8 +66,13 @@ jobs:
           set +e
           # -lock=false: this is read-only, and taking the state lock would need
           # DynamoDB write permission the role deliberately does not have.
-          # Output is discarded on purpose -- see the header note about secrets.
-          tofu plan -input=false -no-color -detailed-exitcode -lock=false > /dev/null 2>&1
+          #
+          # stdout is discarded (it carries the resource diff, which can echo
+          # values from state -- see the header note about secrets). stderr is
+          # NOT discarded: Terraform writes permission/backend errors there, and
+          # those carry no resource values. Without this, a failing check is
+          # undiagnosable -- which is exactly what happened on the first run.
+          tofu plan -input=false -no-color -detailed-exitcode -lock=false > /dev/null
           code=$?
           set -e
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
