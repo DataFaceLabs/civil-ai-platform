@@ -23,6 +23,8 @@ from civilai_platform.models.entities import Role
 from civilai_platform.services import artifacts as artifact_svc
 from civilai_platform.services import project as project_svc
 from civilai_platform.services import project_activity as activity_svc
+from civilai_platform.services.zoning_scenario_compute import compute_zoning_scenario
+from civilai_platform.models.zoning_scenario import ZoningScenarioState
 from civilai_platform.store.base import PlatformStore
 
 router = APIRouter(prefix="/v1/projects", tags=["projects"])
@@ -248,6 +250,47 @@ def patch_project_state(
         if "not found" in msg.lower():
             raise HTTPException(404, msg) from exc
         raise HTTPException(400, msg) from exc
+
+
+@router.post(
+    "/{project_id}/zoning-scenarios/{scenario_id}/compute",
+    response_model=ProjectStateResponse,
+)
+def compute_zoning_scenario_route(
+    project_id: str,
+    scenario_id: str,
+    ctx: Annotated[AuthContext, Depends(_writer_ctx)],
+    store: Annotated[PlatformStore, Depends(get_store_dep)],
+) -> ProjectStateResponse:
+    """Compute proposed zoning facts + comparisons from the land-dev reg-text corpus."""
+    assert ctx.tenant_id
+    state = store.get_project_state(ctx.tenant_id, project_id)
+    if not state:
+        raise HTTPException(404, "Project state not found")
+    if state.zoning_scenario is None:
+        raise HTTPException(400, "No zoning_scenario on project state")
+    zs = state.zoning_scenario
+    if isinstance(zs, dict):
+        zs = ZoningScenarioState.model_validate(zs)
+    try:
+        updated_zs = compute_zoning_scenario(
+            zs,
+            scenario_id=scenario_id,
+            site_payload=state.site_payload if isinstance(state.site_payload, dict) else None,
+            sections=state.sections,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Zoning scenario compute failed: {exc}") from exc
+
+    from civilai_platform.models.entities import utc_now
+
+    updated_state = state.model_copy(
+        update={"zoning_scenario": updated_zs, "updated_at": utc_now()}
+    )
+    store.put_project_state(updated_state)
+    return ProjectStateResponse.from_entity(updated_state)
 
 
 @router.post("/{project_id}/artifacts", response_model=ArtifactPresignResponse)
