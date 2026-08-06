@@ -1,0 +1,140 @@
+# Infrastructure drift detection (H0-IACDRIFT).
+#
+# On 2026-08-01 six production problems were found in one session, all of the same
+# shape: merged to git, downstream action never run. Two were Terraform merged but
+# never applied -- one caused a customer-facing outage, and a bare `tofu apply`
+# would have replaced the Amplify app serving www.civil1.ai. Nothing was watching.
+# This is what watches.
+#
+# Primary signal is `tofu plan -detailed-exitcode` (0 = in sync, 1 = error,
+# 2 = drift), cross-checked against the plan's summary line -- see "Detect drift".
+#
+# What is surfaced: the summary line ("Plan: N to add, ...") and stderr. Both are
+# counts and error text, never resource values. What is NOT surfaced: the plan's
+# diff body, because Terraform state -- and therefore that diff -- contains
+# secrets in plaintext. On drift, a human runs `tofu plan` locally to see what
+# changed.
+name: drift
+
+on:
+  schedule:
+    # 13:00 UTC daily (~08:00 America/Chicago) -- lands before the working day so
+    # drift introduced yesterday is visible before anyone deploys on top of it.
+    - cron: "0 13 * * *"
+  workflow_dispatch: {}
+
+# Required for GitHub to mint the OIDC token the AWS role trusts.
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: drift
+  cancel-in-progress: false
+
+jobs:
+  iac-drift:
+    name: "tofu plan drift (uat)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.12.3"
+          # THE reason this check silently passed while uat was drifted.
+          # setup-opentofu defaults to installing a wrapper script around the
+          # binary, and the wrapper does not propagate -detailed-exitcode's
+          # exit 2 -- `tofu plan` reported "2 to add, 6 to change" on stdout
+          # while exiting 0. Same version exits 2 correctly when run directly.
+          # Verified: the runner installed 1.12.3 and STILL returned 0 until
+          # this was set, so the version was innocent.
+          tofu_wrapper: false
+
+      - name: Assume read-only drift role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Created by infra/opentofu/environments/uat/ci_oidc.tf.
+          # Trust is pinned to this repo + refs/heads/main; PRs cannot assume it.
+          #
+          # Defaulted rather than required-as-a-secret on purpose: a role ARN is not
+          # a secret (the account id is already in infra/opentofu/README.md), and a
+          # secret someone must remember to set is itself an instance of the
+          # "merged but the manual step never ran" class this workflow exists to
+          # catch. Override with a repo variable if the ARN ever changes.
+          role-to-assume: ${{ vars.AWS_DRIFT_ROLE_ARN || 'arn:aws:iam::379604374458:role/uat-civilai-ci-drift' }}
+          aws-region: us-east-1
+          role-session-name: drift-detection
+
+      - name: Pull environment config from SSM
+        # terraform.tfvars is gitignored (it holds real tokens) and SSM is its
+        # source of truth. Without this the plan runs on defaults that differ
+        # from reality for 8 of 16 variables -- including feature toggles whose
+        # defaults would make it propose destroying live modules.
+        run: ./scripts/tofu-config.sh pull uat
+
+      - name: Stub the Lambda package
+        # The api-gateway module calls filebase64sha256() on this path, so the
+        # file must EXIST at plan time -- but the resource sets
+        # `lifecycle { ignore_changes = [filename, source_code_hash] }`, so its
+        # contents cannot affect the plan. A placeholder is therefore exact, not
+        # an approximation, and avoids a 50 MB build on every drift run.
+        run: |
+          mkdir -p infra/dist
+          [ -f infra/dist/platform-lambda.zip ] || \
+            printf 'drift-check placeholder' > infra/dist/platform-lambda.zip
+
+      - name: tofu init
+        working-directory: infra/opentofu/environments/uat
+        run: tofu init -input=false -no-color
+
+      - name: Detect drift
+        id: plan
+        working-directory: infra/opentofu/environments/uat
+        run: |
+          set +e
+          # -lock=false: this is read-only, and taking the state lock would need
+          # DynamoDB write permission the role deliberately does not have.
+          #
+          # stdout is discarded (it carries the resource diff, which can echo
+          # values from state -- see the header note about secrets). stderr is
+          # NOT discarded: Terraform writes permission/backend errors there, and
+          # those carry no resource values. Without this, a failing check is
+          # undiagnosable -- which is exactly what happened on the first run.
+          tofu plan -input=false -no-color -detailed-exitcode -lock=false > /tmp/plan.txt 2>/tmp/plan.err
+          code=$?
+          set -e
+          echo "tofu plan exit code: ${code}"
+
+          # Never trust the exit code alone. OpenTofu 1.8.2 returned 0 from
+          # -detailed-exitcode on a plan with 2 adds and 6 changes, which made
+          # this job pass while uat was drifted -- a silent false negative, the
+          # worst possible failure for a drift check. So the summary line is
+          # parsed as an independent signal and either saying "drift" wins.
+          summary="$(grep -E '^(Plan:|No changes)' /tmp/plan.txt | head -1 || true)"
+          if [ "$code" = "0" ] && [ -n "$summary" ] \
+             && ! printf '%s' "$summary" | grep -q '^No changes' \
+             && ! printf '%s' "$summary" | grep -q '^Plan: 0 to add, 0 to change, 0 to destroy'; then
+            echo "::warning title=Exit code disagreed with plan::tofu exited 0 but the plan reports changes. Trusting the plan. Check the pinned tofu version."
+            code=2
+          fi
+          # Emit ONLY the summary line ("Plan: N to add, ...") and any stderr.
+          # Counts and error text carry no resource values; the diff body, which
+          # can echo values out of state, is never shown. Without this a
+          # disagreement between CI and a local plan is undiagnosable -- which is
+          # exactly what happened when CI reported "no drift" while local
+          # reported 2 add / 6 change.
+          grep -E "^(Plan:|No changes|Error:)" /tmp/plan.txt || true
+          [ -s /tmp/plan.err ] && cat /tmp/plan.err || true
+          echo "caller identity:"
+          aws sts get-caller-identity --query 'Arn' --output text || true
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0) echo "::notice title=No drift::uat matches the committed configuration." ;;
+            2) echo "::error title=INFRASTRUCTURE DRIFT::uat has drifted from the committed Terraform. Run 'tofu plan' in infra/opentofu/environments/uat locally to see what changed. Plan output is intentionally not shown here (state contains secrets)." ;;
+            *) echo "::error title=Drift check failed::tofu plan could not complete (exit $code) -- likely a permissions or backend problem, not drift itself." ;;
+          esac
+
+      - name: Fail on drift
+        if: steps.plan.outputs.exit_code != '0'
+        run: exit 1

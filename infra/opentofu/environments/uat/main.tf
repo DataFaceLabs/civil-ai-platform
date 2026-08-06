@@ -39,7 +39,13 @@ resource "aws_s3_bucket_cors_configuration" "data_lake" {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "PUT", "HEAD"]
     allowed_origins = var.cors_origins
-    expose_headers  = ["ETag"]
+    # Range headers are required, not cosmetic: PMTiles fetches map tiles as HTTP
+    # byte ranges, and a browser cannot read the response without Accept-Ranges /
+    # Content-Range / Content-Length being exposed. These were set directly on the
+    # bucket during the 2026-07-24 PMTiles work and never recorded here, so a
+    # `tofu apply` would have silently reverted them and broken Explorer overlays.
+    # Found 2026-08-02 by the H0-IACDRIFT check.
+    expose_headers  = ["ETag", "Accept-Ranges", "Content-Range", "Content-Length", "Content-Type"]
     max_age_seconds = 3600
   }
 }
@@ -50,42 +56,42 @@ module "secrets" {
   environment         = var.environment
   mapbox_access_token = var.mapbox_access_token
   github_access_token = var.github_access_token
-  tavily_api_key       = var.tavily_api_key
+  tavily_api_key      = var.tavily_api_key
 }
 
 module "cognito" {
   count  = var.create_platform_persistence ? 1 : 0
   source = "../../modules/cognito"
 
-  environment     = var.environment
-  aws_region      = var.aws_region
-  callback_urls   = var.cognito_callback_urls
-  logout_urls     = var.cognito_logout_urls
-  ses_from_email  = var.ses_from_email
+  environment    = var.environment
+  aws_region     = var.aws_region
+  callback_urls  = var.cognito_callback_urls
+  logout_urls    = var.cognito_logout_urls
+  ses_from_email = var.ses_from_email
 }
 
 module "bedrock" {
-  count  = var.create_platform_persistence || var.create_platform_http_api ? 1 : 0
-  source = "../../modules/bedrock"
+  count       = var.create_platform_persistence || var.create_platform_http_api ? 1 : 0
+  source      = "../../modules/bedrock"
   environment = var.environment
 }
 
 module "dynamodb" {
-  count  = var.create_platform_persistence ? 1 : 0
-  source = "../../modules/dynamodb"
+  count       = var.create_platform_persistence ? 1 : 0
+  source      = "../../modules/dynamodb"
   environment = var.environment
 }
 
 module "s3_app" {
-  count  = var.create_platform_persistence ? 1 : 0
-  source = "../../modules/s3"
-  environment = var.environment
+  count        = var.create_platform_persistence ? 1 : 0
+  source       = "../../modules/s3"
+  environment  = var.environment
   cors_origins = var.cors_origins
 }
 
 module "s3_agent_corpus" {
-  count  = var.create_platform_persistence ? 1 : 0
-  source = "../../modules/s3-agent-corpus"
+  count       = var.create_platform_persistence ? 1 : 0
+  source      = "../../modules/s3-agent-corpus"
   environment = var.environment
 }
 
@@ -138,8 +144,9 @@ module "observability" {
   count  = var.create_platform_http_api ? 1 : 0
   source = "../../modules/observability"
 
-  environment          = var.environment
-  lambda_function_name = module.api_gateway[0].lambda_function_name
+  environment              = var.environment
+  lambda_function_name     = module.api_gateway[0].lambda_function_name
+  alarm_notification_email = var.alarm_notification_email
 }
 
 module "agentcore" {

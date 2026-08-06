@@ -208,6 +208,16 @@ resource "aws_amplify_app" "fe" {
   }
 }
 
+variable "session_idle_ms" {
+  type        = string
+  default     = "600000"
+  description = <<-EOT
+    Idle timeout (ms) for the team test-space branch, surfaced to the FE as
+    VITE_CIVILAI_SESSION_IDLE_MS. Default matches the value found live on
+    2026-08-02, which had been set out of band.
+  EOT
+}
+
 resource "aws_amplify_branch" "main" {
   app_id      = aws_amplify_app.fe.id
   branch_name = var.branch_name
@@ -225,6 +235,15 @@ resource "aws_amplify_branch" "main" {
   basic_auth_credentials = var.develop_basic_auth_password != "" ? base64encode(
     "${var.develop_basic_auth_username}:${var.develop_basic_auth_password}"
   ) : null
+
+  # Branch-level overrides, merged over the app-level environment_variables above.
+  # Amplify replaces this map wholesale, so anything set out of band and not
+  # listed here gets dropped on the next apply -- which is exactly what was about
+  # to happen to the session idle timeout below (set directly on the branch, never
+  # recorded here). Found 2026-08-02 by the H0-IACDRIFT check.
+  environment_variables = {
+    VITE_CIVILAI_SESSION_IDLE_MS = var.session_idle_ms
+  }
 
   lifecycle {
     # Provider quirk: the Amplify API never echoes basic_auth_credentials back in a
