@@ -144,6 +144,11 @@ def _invoke_strands_agent(context_payload: dict[str, Any], *, dry_run: bool) -> 
         client_request=str(context_payload.get("client_request") or ""),
         workflow=workflow,
         field_context=dict(context_payload.get("field_context") or {}),
+        zoning_scenario=(
+            dict(context_payload["zoning_scenario"])
+            if isinstance(context_payload.get("zoning_scenario"), dict)
+            else None
+        ),
         tenant_id=context_payload.get("tenant_id"),
         user_id=context_payload.get("user_id"),
         search_run_policy=search_run_policy,
@@ -266,6 +271,11 @@ def _build_context_payload(
             active_section_id=active_section_id,
             field_context=resolved_field_context,
         )
+    project_state = store.get_project_state(tenant_id, project_id)
+    zoning_scenario: dict[str, Any] | None = None
+    if project_state and project_state.zoning_scenario is not None:
+        zs = project_state.zoning_scenario
+        zoning_scenario = zs.model_dump() if hasattr(zs, "model_dump") else dict(zs)  # type: ignore[arg-type]
     return {
         "project_id": project_id,
         "tenant_id": tenant_id,
@@ -276,6 +286,7 @@ def _build_context_payload(
         "active_section_id": active_section_id,
         "workflow": workflow,
         "field_context": resolved_field_context,
+        "zoning_scenario": zoning_scenario,
         "proposed_use": proposed_use,
         "user_role": "analyst",
         "thread_memory": thread_memory,

@@ -95,13 +95,25 @@ def _section_config(step_key: str) -> dict[str, Any]:
             {
                 "userPromptTemplate": (
                     "Review zoning-related field values and suggest concise feasibility language.\n"
+                    "If ZONING_ANALYSIS_BASIS is proposed, label the draft as analyzed under "
+                    "proposed zoning and use proposed-rail values.\n"
                     "Zoning regulations: {{field.ZONING_REGS}}\n"
                     "Platting status: {{field.PLATTING_STATUS}}\n"
-                    "Impervious cover: {{field.IMPERVIOUS_REGS}}"
+                    "Impervious cover: {{field.IMPERVIOUS_REGS}}\n"
+                    "Analysis basis: {{field.ZONING_ANALYSIS_BASIS}}\n"
+                    "Scenario: {{field.ZONING_SCENARIO_LABEL}}"
                 ),
-                "inputFieldCodes": ["ZONING_REGS", "PLATTING_STATUS", "IMPERVIOUS_REGS"],
+                "inputFieldCodes": [
+                    "ZONING_REGS",
+                    "PLATTING_STATUS",
+                    "IMPERVIOUS_REGS",
+                    "ZONING_ANALYSIS_BASIS",
+                    "ZONING_SCENARIO_LABEL",
+                ],
                 "searchContextHint": (
-                    "Prefer official municipal code, LDC, and UDC sources for the governing jurisdiction."
+                    "Prefer official municipal code, LDC, and UDC sources for the governing "
+                    "jurisdiction. Use get_zoning_rails / get_zoning_comparisons evidence when "
+                    "a Zoning Change scenario is active; do not invent ordinance citations."
                 ),
             }
         )
