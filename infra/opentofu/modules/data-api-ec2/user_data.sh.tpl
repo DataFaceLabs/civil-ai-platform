@@ -35,7 +35,6 @@ CIVILAI_DATA_SERVICE_KEY=$SERVICE_KEY
 CIVILAI_EXPERIMENTAL_LLM=1
 CIVILAI_CORS_ORIGINS=$CORS
 CIVILAI_PII_REDACT=1
-CIVILAI_ENVIRONMENT=$ENVIRONMENT
 WEB_CONCURRENCY=4
 PORT=8000
 AWS_DEFAULT_REGION=$AWS_REGION
@@ -57,23 +56,11 @@ fi
 cd /opt/civilai/civil-ai-data
 docker build -t civil-ai-data .
 docker rm -f civil-ai-data 2>/dev/null || true
-# H3-ALARM: ship stdout to CloudWatch Logs. uvicorn runs with --no-access-log
-# (deploy/entrypoint.sh) by design, so the only thing written here is the
-# app's own EMF 5xx emission (civilai/api/emf_metrics.py) -- deliberately
-# low-volume, not a general request log. Group is provisioned by Terraform
-# (data-api-ec2/main.tf aws_cloudwatch_log_group.data_api); this instance
-# role has logs:CreateLogStream/PutLogEvents/DescribeLogStreams scoped to it,
-# not logs:CreateLogGroup, so a typo here fails loud instead of spraying a
-# new group.
 docker run -d --name civil-ai-data --restart unless-stopped \
   -p 8000:8000 \
   -v /data:/data \
   -v /opt/civilai/civil-ai-data/docs:/app/docs:ro \
   --env-file /etc/civil-ai-data/env \
-  --log-driver awslogs \
-  --log-opt awslogs-region="$AWS_REGION" \
-  --log-opt awslogs-group="/civilai/$ENVIRONMENT/data-api" \
-  --log-opt awslogs-stream="prod" \
   civil-ai-data
 
 # Dev data plane (M0.5 asymmetric split): second container on 8001 serving the
@@ -88,7 +75,6 @@ CIVILAI_DATA_SERVICE_KEY=$SERVICE_KEY
 CIVILAI_EXPERIMENTAL_LLM=1
 CIVILAI_CORS_ORIGINS=$CORS
 CIVILAI_PII_REDACT=1
-CIVILAI_ENVIRONMENT=$ENVIRONMENT-dev
 WEB_CONCURRENCY=2
 PORT=8001
 AWS_DEFAULT_REGION=$AWS_REGION

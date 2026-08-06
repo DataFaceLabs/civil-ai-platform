@@ -5,6 +5,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from civilai_platform.models.zoning_scenario import ZoningScenarioState
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -269,6 +271,8 @@ class ProjectState(BaseModel):
     references: list[dict[str, Any]] = Field(default_factory=list)
     feasibility_document: FeasibilityDocumentRef | None = None
     verification_steps: list[VerificationStep] = Field(default_factory=list)
+    # ADR-0008: dual-rail Zoning Change scenario (baseline retained; proposed computed).
+    zoning_scenario: ZoningScenarioState | None = None
     updated_at: datetime
 
 

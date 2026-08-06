@@ -244,7 +244,10 @@ def patch_project_state(
             actor_role=ctx.role.value if ctx.role else None,
         )
     except ValueError as exc:
-        raise HTTPException(404, str(exc)) from exc
+        msg = str(exc)
+        if "not found" in msg.lower():
+            raise HTTPException(404, msg) from exc
+        raise HTTPException(400, msg) from exc
 
 
 @router.post("/{project_id}/artifacts", response_model=ArtifactPresignResponse)

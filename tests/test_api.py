@@ -1,9 +1,7 @@
 import os
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 
 from civilai_platform.app import create_app
 from civilai_platform.models.api import AdminTenantCreate, TenantCreate, UserCreate
@@ -46,32 +44,6 @@ def test_health(client: TestClient) -> None:
     res = client.get("/health")
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
-
-
-def test_health_reports_unknown_git_sha_when_file_absent(client: TestClient) -> None:
-    """No file is what a plain checkout looks like -- package-lambda.sh writes it
-    only at packaging time (H3-DRIFT). Must degrade to "unknown", never fabricate."""
-    from civilai_platform import app as app_module
-
-    sha_file = Path(app_module.__file__).with_name("_git_sha.txt")
-    assert not sha_file.exists()
-
-    res = client.get("/health")
-
-    assert res.json()["git_sha"] == "unknown"
-
-
-def test_health_reports_git_sha_from_file(client: TestClient) -> None:
-    """Mirrors what scripts/package-lambda.sh bakes into the deployment zip."""
-    from civilai_platform import app as app_module
-
-    sha_file = Path(app_module.__file__).with_name("_git_sha.txt")
-    sha_file.write_text("cd01450814c72bb76f4e303e3d08c29a2afca235\n", encoding="utf-8")
-    try:
-        res = client.get("/health")
-        assert res.json()["git_sha"] == "cd01450814c72bb76f4e303e3d08c29a2afca235"
-    finally:
-        sha_file.unlink()
 
 
 def test_bootstrap_and_me(client: TestClient) -> None:

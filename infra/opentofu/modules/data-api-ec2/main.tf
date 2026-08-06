@@ -162,8 +162,8 @@ data "aws_iam_policy_document" "ec2" {
         "ssm:GetParameter",
       ]
       resources = [
-        "arn:aws:ssm:${var.aws_region}:*:parameter${startswith(var.github_token_parameter, "/") ? var.github_token_parameter : "/${var.github_token_parameter}"}",
-      ]
+      "arn:aws:ssm:${var.aws_region}:*:parameter${startswith(var.github_token_parameter, "/") ? var.github_token_parameter : "/${var.github_token_parameter}"}",
+    ]
     }
   }
 
@@ -176,52 +176,6 @@ data "aws_iam_policy_document" "ec2" {
     ]
     resources = ["*"]
   }
-
-  # H3-ALARM: the container has no local IAM user, so the Docker awslogs log
-  # driver assumes this instance role directly. CreateLogGroup deliberately
-  # excluded -- the group is provisioned below, not create-on-first-write, so
-  # a typo in the docker run --log-opt can never silently spray a new group.
-  statement {
-    sid    = "DataApiLogsWrite"
-    effect = "Allow"
-    actions = [
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-      "logs:DescribeLogStreams",
-    ]
-    resources = [
-      "${aws_cloudwatch_log_group.data_api.arn}:*",
-    ]
-  }
-
-  # civil-ai's deploy-uat.sh probes for this log group before passing
-  # --log-driver awslogs, so that a deploy still works when the group does not
-  # exist yet (that probe exists because hardcoding the flag against unapplied
-  # IAM took the data API down on 2026-08-01). The probe runs ON the instance,
-  # under this role -- and without DescribeLogGroups it gets AccessDenied,
-  # reads that as "absent", and silently falls back to the json-file driver
-  # forever. Observed exactly that on 2026-08-02: the group existed and log
-  # shipping still never activated.
-  #
-  # Separate statement because DescribeLogGroups is a list operation and does
-  # not accept the ":*" log-stream ARN form used above.
-  statement {
-    sid       = "DataApiLogsDiscover"
-    effect    = "Allow"
-    actions   = ["logs:DescribeLogGroups"]
-    resources = ["*"]
-  }
-}
-
-# H3-ALARM: receives the container's stdout via the Docker awslogs log
-# driver (wired in civil-ai's deploy-uat.sh and this module's user-data).
-# uvicorn runs with --no-access-log (deploy/entrypoint.sh) by design, so
-# nothing but the app's own H3-ALARM EMF 5xx emission
-# (civil-ai-data/src/civilai/api/emf_metrics.py) writes here -- this group
-# is deliberately low-volume, not a general request log.
-resource "aws_cloudwatch_log_group" "data_api" {
-  name              = "/civilai/${var.environment}/data-api"
-  retention_in_days = 30
 }
 
 resource "aws_iam_role_policy" "ec2" {
@@ -342,7 +296,7 @@ resource "aws_instance" "data_api" {
 }
 
 resource "aws_eip" "data_api" {
-  domain   = "vpc"
+  domain = "vpc"
   instance = aws_instance.data_api.id
 
   tags = {
@@ -374,8 +328,4 @@ output "security_group_id" {
 
 output "iam_role_arn" {
   value = aws_iam_role.ec2.arn
-}
-
-output "data_api_log_group_name" {
-  value = aws_cloudwatch_log_group.data_api.name
 }
