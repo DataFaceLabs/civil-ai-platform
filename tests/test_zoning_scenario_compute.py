@@ -63,8 +63,42 @@ def test_compute_fills_proposed_and_comparisons() -> None:
         resp.raise_for_status = MagicMock()
         return resp
 
+    def fake_get(url: str, **kwargs):  # type: ignore[no-untyped-def]
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 200
+        resp.raise_for_status = MagicMock()
+        if "/v1/dsi/resolve" in url:
+            resp.json.return_value = {
+                "found": True,
+                "freshness": "current",
+                "dsi_version": "coa-dsi-test",
+                "record": {
+                    "standards": {
+                        "min_lot_area_sqft": 8000,
+                        "min_lot_width_ft": 50,
+                        "setback_front_ft": 25,
+                        "setback_side_ft": 5,
+                        "setback_rear_ft": 10,
+                        "max_building_coverage_pct": 60,
+                        "max_impervious_cover_pct": 80,
+                        "max_height_ft": 60,
+                    },
+                    "citations": {
+                        "dimensional": {
+                            "section_id": "S25-2",
+                            "citation": "LDC Ch. 25-2",
+                            "deep_link": "https://example.com/25-2",
+                        }
+                    },
+                },
+            }
+            return resp
+        resp.json.return_value = {}
+        return resp
+
     client = MagicMock(spec=httpx.Client)
     client.post.side_effect = fake_post
+    client.get.side_effect = fake_get
 
     sections = [
         Section(
@@ -94,6 +128,9 @@ def test_compute_fills_proposed_and_comparisons() -> None:
     assert sc.status == "computed"
     assert sc.proposed.fields["ZONING_REGS"].value
     assert "MF-4" in sc.proposed.fields["ZONING_REGS"].value
+    assert sc.proposed.fields["MAX_BUILDING_HEIGHT"].value == "60 ft"
+    assert sc.input_fingerprint is not None
+    assert sc.input_fingerprint.dsi_version == "coa-dsi-test"
     assert sc.comparisons
     assert sc.risk_summary.entitlement_required is True
     assert sc.computation.status == "succeeded"

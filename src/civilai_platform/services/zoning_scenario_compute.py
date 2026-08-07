@@ -35,6 +35,24 @@ COMPARABLE_CODES = (
     "COMPATIBILITY_STDS",
     "LDC_REFERENCE",
     "GOVERNING_JURIS",
+    "MIN_LOT_SIZE",
+    "MIN_LOT_WIDTH",
+    "SETBACKS",
+    "MAX_BUILDING_COVERAGE",
+    "MAX_BUILDING_HEIGHT",
+    "EASEMENTS_SETBACKS",
+)
+
+_DSI_CODES = frozenset(
+    {
+        "MIN_LOT_SIZE",
+        "MIN_LOT_WIDTH",
+        "SETBACKS",
+        "MAX_BUILDING_COVERAGE",
+        "MAX_BUILDING_HEIGHT",
+        "IMPERVIOUS_COVER_LIMIT",
+        "EASEMENTS_SETBACKS",
+    }
 )
 
 _CODE_QUERIES: dict[str, tuple[str, list[str]]] = {
@@ -44,6 +62,12 @@ _CODE_QUERIES: dict[str, tuple[str, list[str]]] = {
     "COMPATIBILITY_STDS": ("compatibility standards height setbacks", ["compatibility", "zoning"]),
     "LDC_REFERENCE": ("land development code", ["zoning"]),
     "GOVERNING_JURIS": ("jurisdiction zoning", ["zoning"]),
+    "MIN_LOT_SIZE": ("minimum lot size area", ["zoning"]),
+    "MIN_LOT_WIDTH": ("minimum lot width", ["zoning"]),
+    "SETBACKS": ("front side rear setback", ["zoning", "compatibility"]),
+    "MAX_BUILDING_COVERAGE": ("maximum building coverage", ["zoning"]),
+    "MAX_BUILDING_HEIGHT": ("maximum building height", ["zoning"]),
+    "EASEMENTS_SETBACKS": ("easement setback", ["zoning"]),
 }
 
 
@@ -62,6 +86,102 @@ def _fingerprint(payload: Any, jurisdiction_key: str, proposed_code: str) -> str
 
 def _field_value(text: str, *, origin: str, status: str = "review") -> ScenarioFieldValue:
     return ScenarioFieldValue(value=text, status=status, origin=origin)  # type: ignore[arg-type]
+
+
+def _resolve_dsi(
+    *,
+    jurisdiction_key: str,
+    zoning_code: str,
+    client: httpx.Client,
+    base_url: str,
+    service_key: str | None,
+) -> dict[str, Any] | None:
+    headers: dict[str, str] = {}
+    if service_key:
+        headers["X-Data-Service-Key"] = service_key
+    url = f"{base_url.rstrip('/')}/v1/dsi/resolve"
+    resp = client.get(
+        url,
+        params={"jurisdiction_key": jurisdiction_key, "zoning_code": zoning_code},
+        headers=headers,
+    )
+    if resp.status_code >= 400:
+        logger.warning("dsi resolve failed: %s %s", resp.status_code, resp.text[:200])
+        return None
+    data = resp.json()
+    return data if isinstance(data, dict) else None
+
+
+def _dsi_field_texts(dsi: dict[str, Any], proposed_code: str) -> dict[str, str]:
+    """Map DSI resolve payload to comparable FE display strings."""
+    record = dsi.get("record") or {}
+    std = record.get("standards") or {}
+    out: dict[str, str] = {}
+    if std.get("min_lot_area_sqft") is not None:
+        out["MIN_LOT_SIZE"] = f"{float(std['min_lot_area_sqft']):,.0f} sq ft"
+    elif std.get("min_lot_area_ac") is not None:
+        out["MIN_LOT_SIZE"] = f"{std['min_lot_area_ac']} ac"
+    if std.get("min_lot_width_ft") is not None:
+        out["MIN_LOT_WIDTH"] = f"{float(std['min_lot_width_ft']):g} ft"
+    parts: list[str] = []
+    if std.get("setback_front_ft") is not None:
+        parts.append(f"Front: {float(std['setback_front_ft']):g} ft")
+    if std.get("setback_side_ft") is not None:
+        parts.append(f"Side: {float(std['setback_side_ft']):g} ft")
+    if std.get("setback_rear_ft") is not None:
+        parts.append(f"Rear: {float(std['setback_rear_ft']):g} ft")
+    if parts:
+        out["SETBACKS"] = "; ".join(parts)
+        out["EASEMENTS_SETBACKS"] = (
+            f"Required setbacks ({proposed_code}): {'; '.join(parts)}. "
+            "Platted / recorded easements require title commitment and survey confirmation."
+        )
+    if std.get("max_building_coverage_pct") is not None:
+        out["MAX_BUILDING_COVERAGE"] = f"{float(std['max_building_coverage_pct']):g}%"
+    if std.get("max_height_ft") is not None:
+        out["MAX_BUILDING_HEIGHT"] = f"{float(std['max_height_ft']):g} ft"
+    elif std.get("max_height_stories") is not None:
+        out["MAX_BUILDING_HEIGHT"] = f"{float(std['max_height_stories']):g} stories"
+    if std.get("max_impervious_cover_pct") is not None:
+        out["IMPERVIOUS_COVER_LIMIT"] = f"{float(std['max_impervious_cover_pct']):g}%"
+    return out
+
+
+def _evidence_from_dsi(jurisdiction_key: str, dsi: dict[str, Any]) -> list[OrdinanceEvidence]:
+    now = _now_iso()
+    record = dsi.get("record") or {}
+    citations = record.get("citations") or {}
+    out: list[OrdinanceEvidence] = []
+    if isinstance(citations, dict):
+        for cite in citations.values():
+            if not isinstance(cite, dict):
+                continue
+            out.append(
+                OrdinanceEvidence(
+                    jurisdiction_key=jurisdiction_key,
+                    section_id=str(cite.get("section_id") or ""),
+                    citation=str(cite.get("citation") or ""),
+                    title=cite.get("title"),
+                    deep_link=str(cite.get("deep_link") or ""),
+                    excerpt="",
+                    retrieved_at=now,
+                )
+            )
+    return out
+
+
+def _parse_leading_number(text: str | None) -> float | None:
+    if not text:
+        return None
+    import re
+
+    m = re.search(r"([\d,.]+)", text.replace(",", ""))
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
 
 
 def _baseline_from_state(
@@ -188,9 +308,13 @@ def _compare_field(
     *,
     evidence: list[OrdinanceEvidence],
     district_changed: bool,
+    standards_stale: bool = False,
 ) -> ZoningFactComparison:
+    from civilai_platform.models.zoning_scenario import NumericDiff
+
     b = baseline.value if baseline else None
     p = proposed.value if proposed else None
+    numeric: NumericDiff | None = None
     if b == p:
         kind = "unchanged"
         summary = "Unchanged"
@@ -201,11 +325,37 @@ def _compare_field(
         summary = "Value changed under proposed zoning"
         level = "medium" if district_changed else "low"
         drivers = ["entitlement_rezoning_required"] if district_changed and fe_code == "ZONING_REGS" else []
+        bn = _parse_leading_number(b)
+        pn = _parse_leading_number(p)
+        if bn is not None and pn is not None and fe_code in _DSI_CODES:
+            delta = pn - bn
+            unit = "%" if "%" in (p or "") else "ft"
+            if "sq ft" in (p or "").lower() or "ac" in (p or "").lower():
+                unit = "sqft" if "sq ft" in (p or "").lower() else "ac"
+            numeric = NumericDiff(unit=unit, baseline=bn, proposed=pn, delta=delta)
+            if delta < 0 and fe_code in {
+                "MIN_LOT_SIZE",
+                "MIN_LOT_WIDTH",
+                "SETBACKS",
+                "MAX_BUILDING_COVERAGE",
+                "MAX_BUILDING_HEIGHT",
+                "IMPERVIOUS_COVER_LIMIT",
+            }:
+                # Smaller max limits / larger mins need nuance; flag both ways.
+                if fe_code.startswith("MAX") or fe_code == "IMPERVIOUS_COVER_LIMIT":
+                    drivers.append("dimensional_more_restrictive")
+                else:
+                    drivers.append("dimensional_more_permissive")
+            elif delta > 0 and fe_code in _DSI_CODES:
+                if fe_code.startswith("MAX") or fe_code == "IMPERVIOUS_COVER_LIMIT":
+                    drivers.append("dimensional_more_permissive")
+                else:
+                    drivers.append("dimensional_more_restrictive")
     elif p and not b:
         kind = "added"
         summary = "Proposed value added"
         level = "medium"
-        drivers = ["corpus_gap"] if "pending" in (p or "").lower() else []
+        drivers = ["corpus_gap"] if "pending" in (p or "").lower() or "gap" in (p or "").lower() else []
     elif b and not p:
         kind = "removed"
         summary = "Proposed value missing"
@@ -217,7 +367,12 @@ def _compare_field(
         level = "unknown"
         drivers = ["corpus_gap"]
 
-    if not evidence and kind != "unchanged":
+    if standards_stale and "standards_stale" not in drivers:
+        drivers.append("standards_stale")
+        if level == "low":
+            level = "medium"
+
+    if not evidence and kind != "unchanged" and fe_code not in _DSI_CODES:
         if "corpus_gap" not in drivers:
             drivers.append("corpus_gap")
         level = "unknown" if level == "low" else level
@@ -226,10 +381,10 @@ def _compare_field(
         fe_code=fe_code,
         baseline_value=b,
         proposed_value=p,
-        diff=ZoningFactDiff(kind=kind, summary=summary),  # type: ignore[arg-type]
+        diff=ZoningFactDiff(kind=kind, summary=summary, numeric=numeric),  # type: ignore[arg-type]
         risk=ZoningFactRisk(level=level, drivers=drivers),  # type: ignore[arg-type]
         evidence=evidence,
-        needs_review=kind != "unchanged",
+        needs_review=kind != "unchanged" or standards_stale,
     )
 
 
@@ -264,6 +419,8 @@ def compute_zoning_scenario(
     open_gaps: list[str] = []
     high_risk: list[str] = []
     corpus_version: str | None = None
+    dsi_version: str | None = None
+    standards_stale = False
 
     try:
         # Ensure corpus
@@ -279,42 +436,73 @@ def compute_zoning_scenario(
         if ensure_resp.status_code < 400:
             corpus_version = ensure_resp.json().get("corpus_version")
 
-        for code in COMPARABLE_CODES:
-            query_base, domains = _CODE_QUERIES[code]
-            query = f"{proposed_code} {query_base}"
-            try:
-                hits = _search_regtext(
-                    jurisdiction_key=jurisdiction_key,
-                    query=query,
-                    domains=domains,
-                    client=client,
-                    base_url=settings.data_api_base,
-                    service_key=settings.data_service_key,
-                )
-            except Exception as exc:  # noqa: BLE001 — surface as corpus gap
-                logger.warning("regtext search failed for %s: %s", code, exc)
-                hits = []
-
-            evidence = _evidence_from_hits(jurisdiction_key, hits)
-            if code == "ZONING_REGS":
-                text = _compose_zoning_regs(proposed_code, hits)
-            elif code == "GOVERNING_JURIS":
-                text = jurisdiction_key
-            elif code == "LDC_REFERENCE":
-                text = hits[0]["citation"] if hits else f"Land development code — {jurisdiction_key}"
-            elif hits:
-                text = f"{hits[0].get('citation', '')}: {hits[0].get('excerpt', '')}".strip(": ")
+        # DSI resolve for dimensional standards (ADR-0009)
+        dsi_payload = _resolve_dsi(
+            jurisdiction_key=jurisdiction_key,
+            zoning_code=proposed_code,
+            client=client,
+            base_url=settings.data_api_base,
+            service_key=settings.data_service_key,
+        )
+        dsi_texts: dict[str, str] = {}
+        dsi_evidence: list[OrdinanceEvidence] = []
+        if dsi_payload:
+            dsi_version = dsi_payload.get("dsi_version")
+            standards_stale = dsi_payload.get("freshness") == "stale"
+            if dsi_payload.get("found"):
+                dsi_texts = _dsi_field_texts(dsi_payload, proposed_code)
+                dsi_evidence = _evidence_from_dsi(jurisdiction_key, dsi_payload)
             else:
-                text = f"{code} for {proposed_code}: corpus gap — confirm in adopted land-dev code."
-                open_gaps.append(code)
+                open_gaps.extend(sorted(_DSI_CODES))
 
-            proposed_fields[code] = _field_value(text, origin="regtext" if hits else "composed")
+        for code in COMPARABLE_CODES:
+            evidence: list[OrdinanceEvidence] = []
+            if code in _DSI_CODES and code in dsi_texts:
+                text = dsi_texts[code]
+                evidence = list(dsi_evidence)
+                origin = "regtext"
+            elif code in _DSI_CODES and code not in dsi_texts:
+                text = f"{code} for {proposed_code}: DSI gap — confirm in adopted land-dev code."
+                open_gaps.append(code)
+                origin = "composed"
+            else:
+                query_base, domains = _CODE_QUERIES[code]
+                query = f"{proposed_code} {query_base}"
+                try:
+                    hits = _search_regtext(
+                        jurisdiction_key=jurisdiction_key,
+                        query=query,
+                        domains=domains,
+                        client=client,
+                        base_url=settings.data_api_base,
+                        service_key=settings.data_service_key,
+                    )
+                except Exception as exc:  # noqa: BLE001 — surface as corpus gap
+                    logger.warning("regtext search failed for %s: %s", code, exc)
+                    hits = []
+
+                evidence = _evidence_from_hits(jurisdiction_key, hits)
+                if code == "ZONING_REGS":
+                    text = _compose_zoning_regs(proposed_code, hits)
+                elif code == "GOVERNING_JURIS":
+                    text = jurisdiction_key
+                elif code == "LDC_REFERENCE":
+                    text = hits[0]["citation"] if hits else f"Land development code — {jurisdiction_key}"
+                elif hits:
+                    text = f"{hits[0].get('citation', '')}: {hits[0].get('excerpt', '')}".strip(": ")
+                else:
+                    text = f"{code} for {proposed_code}: corpus gap — confirm in adopted land-dev code."
+                    open_gaps.append(code)
+                origin = "regtext" if hits else "composed"
+
+            proposed_fields[code] = _field_value(text, origin=origin)
             cmp = _compare_field(
                 code,
                 baseline.fields.get(code),
                 proposed_fields[code],
                 evidence=evidence,
                 district_changed=district_changed,
+                standards_stale=standards_stale and code in _DSI_CODES,
             )
             if cmp.risk.level == "high":
                 high_risk.append(code)
@@ -323,6 +511,14 @@ def compute_zoning_scenario(
         overall = "high" if high_risk else ("medium" if district_changed else "low")
         if open_gaps and overall == "low":
             overall = "unknown"
+        if standards_stale and overall == "low":
+            overall = "medium"
+
+        ic_limit = baseline.structured.ic_limit_pct
+        if "IMPERVIOUS_COVER_LIMIT" in dsi_texts:
+            parsed_ic = _parse_leading_number(dsi_texts["IMPERVIOUS_COVER_LIMIT"])
+            if parsed_ic is not None:
+                ic_limit = parsed_ic
 
         proposed_bundle = ZoningFactBundle(
             fields=proposed_fields,
@@ -331,7 +527,7 @@ def compute_zoning_scenario(
                 zoning_base=scenario.intent.proposed_zoning_base,
                 overlays=list(baseline.structured.overlays) if scenario.intent.keep_overlays else [],
                 jurisdiction_key=jurisdiction_key,
-                ic_limit_pct=baseline.structured.ic_limit_pct,
+                ic_limit_pct=ic_limit,
             ),
         )
 
@@ -347,6 +543,7 @@ def compute_zoning_scenario(
                         site_payload, jurisdiction_key, proposed_code
                     ),
                     regtext_corpus_version=corpus_version,
+                    dsi_version=dsi_version,
                     jurisdiction_key=jurisdiction_key,
                     proposed_zoning_code=proposed_code,
                 ),

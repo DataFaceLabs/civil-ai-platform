@@ -25,6 +25,7 @@ ZoningRiskDriver = Literal[
     "jurisdiction_code_change",
     "corpus_gap",
     "district_unresolved",
+    "standards_stale",
 ]
 
 PROPOSED_BASIS_STATUSES: frozenset[str] = frozenset({"computed", "review", "accepted"})
@@ -109,6 +110,7 @@ class ZoningScenarioIntent(BaseModel):
 class ZoningInputFingerprint(BaseModel):
     site_payload_fingerprint: str
     regtext_corpus_version: str | None = None
+    dsi_version: str | None = None
     jurisdiction_key: str
     proposed_zoning_code: str
 
