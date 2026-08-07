@@ -192,7 +192,15 @@ def patch_project_state(
     state = store.get_project_state(tenant_id, project_id)
     if not state:
         raise ValueError("Project state not found")
-    updated = _merge_project_state(state, patch)
+    try:
+        updated = _merge_project_state(state, patch)
+    except Exception as exc:
+        # Surface ZoningScenarioState validation (analysis_basis, MVP length) as 400.
+        from pydantic import ValidationError
+
+        if isinstance(exc, ValidationError):
+            raise ValueError(str(exc)) from exc
+        raise
     store.put_project_state(updated)
     # Best-effort capture of every section milestone (edit/approve/reopen). Diffs the
     # pre-save sections against the saved ones; never blocks the save. entity_id is

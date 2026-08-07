@@ -23,6 +23,7 @@ from civilai_platform.models.entities import (
     TenantStatus,
     VerificationStep,
 )
+from civilai_platform.models.zoning_scenario import ZoningScenarioState
 
 
 class TenantCreate(BaseModel):
@@ -365,6 +366,7 @@ class ProjectStatePatch(BaseModel):
     references: list[dict] | None = None
     feasibility_document: FeasibilityDocumentRef | None = None
     verification_steps: list[VerificationStep] | None = None
+    zoning_scenario: ZoningScenarioState | None = None
 
 
 class ProjectStateResponse(BaseModel):
@@ -383,6 +385,7 @@ class ProjectStateResponse(BaseModel):
     references: list[dict]
     feasibility_document: FeasibilityDocumentRef | None
     verification_steps: list[VerificationStep]
+    zoning_scenario: ZoningScenarioState | None = None
     updated_at: datetime
 
     @classmethod
