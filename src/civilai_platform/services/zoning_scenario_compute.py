@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -30,8 +31,8 @@ logger = logging.getLogger(__name__)
 
 COMPARABLE_CODES = (
     "ZONING_REGS",
-    "IMPERVIOUS_REGS",
     "IMPERVIOUS_COVER_LIMIT",
+    "IMPERVIOUS_REGS",
     "COMPATIBILITY_STDS",
     "LDC_REFERENCE",
     "GOVERNING_JURIS",
@@ -70,6 +71,29 @@ _CODE_QUERIES: dict[str, tuple[str, list[str]]] = {
     "EASEMENTS_SETBACKS": ("easement setback", ["zoning"]),
 }
 
+# Narrative fields: citation pointers only (no ordinance body excerpts).
+_CITATION_ONLY_CODES = frozenset(
+    {
+        "ZONING_REGS",
+        "IMPERVIOUS_REGS",
+        "COMPATIBILITY_STDS",
+    }
+)
+
+_BOILERPLATE_TITLE_RE = re.compile(
+    r"\b(definitions?|establishment of districts?|general provisions)\b",
+    re.I,
+)
+_DISTRICT_TITLE_RE = re.compile(
+    r"[-–—]\s*([A-Za-z0-9][A-Za-z0-9-]{0,12})\s*(?:\([^)]*\))?\s*district\b",
+    re.I,
+)
+_IMPERVIOUS_TITLE_RE = re.compile(
+    r"\b(impervious|watershed|stormwater|drainage|site development)\b",
+    re.I,
+)
+_COMPAT_TITLE_RE = re.compile(r"\bcompatibilit", re.I)
+
 
 def _now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -84,8 +108,9 @@ def _fingerprint(payload: Any, jurisdiction_key: str, proposed_code: str) -> str
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
-def _field_value(text: str, *, origin: str, status: str = "review") -> ScenarioFieldValue:
-    return ScenarioFieldValue(value=text, status=status, origin=origin)  # type: ignore[arg-type]
+def _field_value(text: str, *, origin: str, status: str | None = None) -> ScenarioFieldValue:
+    resolved = status if status is not None else ("empty" if not text.strip() else "review")
+    return ScenarioFieldValue(value=text, status=resolved, origin=origin)  # type: ignore[arg-type]
 
 
 def _resolve_dsi(
@@ -269,18 +294,123 @@ def _search_regtext(
     return data if isinstance(data, list) else []
 
 
-def _compose_zoning_regs(proposed_code: str, hits: list[dict[str, Any]]) -> str:
+def _hit_title(hit: dict[str, Any]) -> str:
+    return str(hit.get("title") or hit.get("citation") or "")
+
+
+def _is_boilerplate_hit(hit: dict[str, Any]) -> bool:
+    return bool(_BOILERPLATE_TITLE_RE.search(_hit_title(hit)))
+
+
+def _title_matches_district_code(title: str, proposed_code: str) -> bool:
+    code = proposed_code.strip()
+    if not code:
+        return False
+    m = _DISTRICT_TITLE_RE.search(title)
+    if m and m.group(1).upper() == code.upper():
+        return True
+    # Fallback: code appears in title alongside "district"
+    title_u = title.upper()
+    return code.upper() in title_u and "DISTRICT" in title_u
+
+
+def _filter_citation_hits(
+    fe_code: str,
+    proposed_code: str,
+    hits: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep only ordinance sections that are plausible cites for the FE field."""
     if not hits:
-        return (
-            f"Proposed zoning: {proposed_code}. "
-            "District-specific rule extraction pending — land-dev corpus returned no hits."
-        )
-    parts = [f"Proposed zoning: {proposed_code}."]
+        return []
+
+    ranked: list[tuple[int, int, dict[str, Any]]] = []
+    for idx, hit in enumerate(hits):
+        title = _hit_title(hit)
+        if _is_boilerplate_hit(hit):
+            continue
+        priority = 0
+        if fe_code == "ZONING_REGS":
+            if _title_matches_district_code(title, proposed_code):
+                priority = 3
+            elif proposed_code.upper() in title.upper():
+                priority = 2
+            elif re.search(r"\bdistrict\b", title, re.I) and not _is_boilerplate_hit(hit):
+                priority = 1
+            else:
+                continue
+        elif fe_code == "IMPERVIOUS_REGS":
+            if _IMPERVIOUS_TITLE_RE.search(title):
+                priority = 2
+            elif _title_matches_district_code(title, proposed_code):
+                # District article often points at IC via dimensional standards.
+                priority = 1
+            else:
+                continue
+        elif fe_code == "COMPATIBILITY_STDS":
+            if _COMPAT_TITLE_RE.search(title):
+                priority = 2
+            else:
+                # Do not treat generic height/setback district text as compatibility.
+                continue
+        else:
+            priority = 1
+        ranked.append((priority, -idx, hit))
+
+    ranked.sort(key=lambda row: (-row[0], -row[1]))
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for _, __, hit in ranked:
+        cite = str(hit.get("citation") or hit.get("section_id") or "").strip()
+        if not cite or cite in seen:
+            continue
+        seen.add(cite)
+        out.append(hit)
+        if len(out) >= 3:
+            break
+    return out
+
+
+def _compose_citations(proposed_code: str, hits: list[dict[str, Any]]) -> str:
+    """Citation-only field value. Empty when search yields no relevant sections."""
+    if not hits:
+        return ""
+    cites: list[str] = []
+    seen: set[str] = set()
     for hit in hits[:3]:
-        citation = hit.get("citation") or hit.get("section_id")
-        excerpt = hit.get("excerpt") or ""
-        parts.append(f"{citation}: {excerpt}")
-    return "\n\n".join(parts)
+        citation = str(hit.get("citation") or hit.get("section_id") or "").strip()
+        if not citation or citation in seen:
+            continue
+        seen.add(citation)
+        cites.append(citation)
+    if not cites:
+        return ""
+    code = proposed_code.strip()
+    joined = "; ".join(cites)
+    return f"{code} — {joined}" if code else joined
+
+
+def _dsi_citation_hits(dsi: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Promote DSI dimensional citation into a search-hit-shaped dict."""
+    if not dsi:
+        return []
+    record = dsi.get("record") or {}
+    citations = record.get("citations") or {}
+    dim = citations.get("dimensional") if isinstance(citations, dict) else None
+    if not isinstance(dim, dict):
+        return []
+    citation = str(dim.get("citation") or "").strip()
+    if not citation:
+        return []
+    return [
+        {
+            "section_id": str(dim.get("section_id") or ""),
+            "citation": citation,
+            "title": str(dim.get("title") or citation),
+            "deep_link": str(dim.get("deep_link") or ""),
+            "excerpt": "",
+            "retrieved_at": _now_iso(),
+        }
+    ]
 
 
 def _evidence_from_hits(jurisdiction_key: str, hits: list[dict[str, Any]]) -> list[OrdinanceEvidence]:
@@ -462,7 +592,7 @@ def compute_zoning_scenario(
                 evidence = list(dsi_evidence)
                 origin = "regtext"
             elif code in _DSI_CODES and code not in dsi_texts:
-                text = f"{code} for {proposed_code}: DSI gap — confirm in adopted land-dev code."
+                text = f"{code} for {proposed_code}: confirm in adopted land-dev code."
                 open_gaps.append(code)
                 origin = "composed"
             else:
@@ -481,19 +611,38 @@ def compute_zoning_scenario(
                     logger.warning("regtext search failed for %s: %s", code, exc)
                     hits = []
 
-                evidence = _evidence_from_hits(jurisdiction_key, hits)
-                if code == "ZONING_REGS":
-                    text = _compose_zoning_regs(proposed_code, hits)
-                elif code == "GOVERNING_JURIS":
-                    text = jurisdiction_key
-                elif code == "LDC_REFERENCE":
-                    text = hits[0]["citation"] if hits else f"Land development code — {jurisdiction_key}"
-                elif hits:
-                    text = f"{hits[0].get('citation', '')}: {hits[0].get('excerpt', '')}".strip(": ")
+                if code in _CITATION_ONLY_CODES:
+                    relevant = _filter_citation_hits(code, proposed_code, hits)
+                    if not relevant and code == "IMPERVIOUS_REGS":
+                        # Prefer DSI dimensional schedule cite over empty IC regs.
+                        relevant = _dsi_citation_hits(dsi_payload)
+                    text = _compose_citations(proposed_code, relevant)
+                    evidence = _evidence_from_hits(jurisdiction_key, relevant)
+                    if not text:
+                        open_gaps.append(code)
+                    origin = "regtext" if text else "composed"
                 else:
-                    text = f"{code} for {proposed_code}: corpus gap — confirm in adopted land-dev code."
-                    open_gaps.append(code)
-                origin = "regtext" if hits else "composed"
+                    evidence = _evidence_from_hits(jurisdiction_key, hits)
+                    if code == "GOVERNING_JURIS":
+                        text = jurisdiction_key
+                    elif code == "LDC_REFERENCE":
+                        text = (
+                            hits[0]["citation"]
+                            if hits
+                            else f"Land development code — {jurisdiction_key}"
+                        )
+                    elif hits:
+                        text = (
+                            f"{hits[0].get('citation', '')}: "
+                            f"{hits[0].get('excerpt', '')}"
+                        ).strip(": ")
+                    else:
+                        text = (
+                            f"{code} for {proposed_code}: "
+                            "confirm in adopted land-dev code."
+                        )
+                        open_gaps.append(code)
+                    origin = "regtext" if hits else "composed"
 
             proposed_fields[code] = _field_value(text, origin=origin)
             cmp = _compare_field(
