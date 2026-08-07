@@ -134,37 +134,39 @@ def _invoke_strands_agent(context_payload: dict[str, Any], *, dry_run: bool) -> 
         tuple(str(item) for item in instructions_raw) if isinstance(instructions_raw, list) else ()
     )
 
-    context = WorkbenchContext(
-        project_id=str(context_payload["project_id"]),
-        entity_id=context_payload.get("entity_id"),
-        active_section_id=context_payload.get("active_section_id"),
-        proposed_use=context_payload.get("proposed_use"),
-        user_role=str(context_payload.get("user_role", "analyst")),
-        request=str(context_payload["request"]),
-        client_request=str(context_payload.get("client_request") or ""),
-        workflow=workflow,
-        field_context=dict(context_payload.get("field_context") or {}),
-        zoning_scenario=(
-            dict(context_payload["zoning_scenario"])
-            if isinstance(context_payload.get("zoning_scenario"), dict)
-            else None
-        ),
-        tenant_id=context_payload.get("tenant_id"),
-        user_id=context_payload.get("user_id"),
-        search_run_policy=search_run_policy,
-        system_prompt=str(context_payload.get("system_prompt") or ""),
-        model_id=context_payload.get("model_id"),
-        temperature=context_payload.get("temperature"),
-        guardrails=dict(context_payload.get("guardrails") or {}),
-        prompt_config=dict(context_payload.get("prompt_config") or {}),
-        thread_memory=str(context_payload.get("thread_memory") or ""),
-        section_body_plain=str(context_payload.get("section_body_plain") or ""),
-        tenant_name=context_payload.get("tenant_name"),
-        project_name=context_payload.get("project_name"),
-        property_address=context_payload.get("property_address"),
-        chat_system_prompt=str(context_payload.get("chat_system_prompt") or ""),
-        chat_instructions=chat_instructions,
-    )
+    context_data: dict[str, Any] = {
+        "project_id": str(context_payload["project_id"]),
+        "entity_id": context_payload.get("entity_id"),
+        "active_section_id": context_payload.get("active_section_id"),
+        "proposed_use": context_payload.get("proposed_use"),
+        "user_role": str(context_payload.get("user_role", "analyst")),
+        "request": str(context_payload["request"]),
+        "client_request": str(context_payload.get("client_request") or ""),
+        "workflow": workflow,
+        "field_context": dict(context_payload.get("field_context") or {}),
+        "tenant_id": context_payload.get("tenant_id"),
+        "user_id": context_payload.get("user_id"),
+        "search_run_policy": search_run_policy,
+        "system_prompt": str(context_payload.get("system_prompt") or ""),
+        "model_id": context_payload.get("model_id"),
+        "temperature": context_payload.get("temperature"),
+        "guardrails": dict(context_payload.get("guardrails") or {}),
+        "prompt_config": dict(context_payload.get("prompt_config") or {}),
+        "thread_memory": str(context_payload.get("thread_memory") or ""),
+        "section_body_plain": str(context_payload.get("section_body_plain") or ""),
+        "tenant_name": context_payload.get("tenant_name"),
+        "project_name": context_payload.get("project_name"),
+        "property_address": context_payload.get("property_address"),
+        "chat_system_prompt": str(context_payload.get("chat_system_prompt") or ""),
+        "chat_instructions": chat_instructions,
+    }
+    # Older civilai-agent builds forbid unknown fields; only pass when supported.
+    if "zoning_scenario" in WorkbenchContext.model_fields:
+        zoning_raw = context_payload.get("zoning_scenario")
+        context_data["zoning_scenario"] = (
+            dict(zoning_raw) if isinstance(zoning_raw, dict) else None
+        )
+    context = WorkbenchContext(**context_data)
     with _agent_data_api_base(context_payload.get("_data_api_base")):
         response = run_agent(context, dry_run=dry_run)
     return response.model_dump(mode="json")
