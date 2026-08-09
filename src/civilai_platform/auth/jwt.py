@@ -46,7 +46,7 @@ def allowed_cognito_client_ids() -> set[str]:
     return ids
 
 
-def _token_client_id(claims: dict[str, Any]) -> str | None:
+def token_client_id(claims: dict[str, Any]) -> str | None:
     """Cognito access tokens use ``client_id``; ID tokens use ``aud``."""
     raw = claims.get("client_id") or claims.get("aud")
     if isinstance(raw, list):
@@ -85,7 +85,7 @@ def validate_cognito_token(token: str) -> dict[str, Any]:
             ),
             options={"verify_aud": False},
         )
-        client_id = _token_client_id(claims)
+        client_id = token_client_id(claims)
         if not client_id or client_id not in allowed:
             raise AuthError("Invalid token audience")
         return claims

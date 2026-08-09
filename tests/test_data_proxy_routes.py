@@ -118,6 +118,35 @@ def test_non_trust_user_without_membership_still_forbidden(client: TestClient) -
     assert res.status_code == 400  # require_tenant → missing X-Tenant-Id
 
 
+def test_trust_console_reader_via_trust_client_id() -> None:
+    """Tokens from the Trust Hosted UI client are lake readers without a firm."""
+    from civilai_platform.auth.authz import is_trust_console_reader
+    from civilai_platform.auth.context import AuthContext
+    from civilai_platform.settings import get_settings
+
+    get_settings.cache_clear()
+    import os
+
+    os.environ["CIVILAI_COGNITO_TRUST_APP_CLIENT_ID"] = "trust-client-xyz"
+    get_settings.cache_clear()
+    try:
+        ctx = AuthContext(
+            user_id="sme",
+            email="sme@example.com",
+            cognito_client_id="trust-client-xyz",
+        )
+        assert is_trust_console_reader(ctx) is True
+        other = AuthContext(
+            user_id="product",
+            email="p@example.com",
+            cognito_client_id="product-client",
+        )
+        assert is_trust_console_reader(other) is False
+    finally:
+        os.environ.pop("CIVILAI_COGNITO_TRUST_APP_CLIENT_ID", None)
+        get_settings.cache_clear()
+
+
 @respx.mock
 def test_resolve_happy_path(client: TestClient) -> None:
     tenant_id = _bootstrap(client, "user-a")
