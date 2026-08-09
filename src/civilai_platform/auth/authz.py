@@ -4,6 +4,7 @@ from civilai_platform.auth.jwt import (
     AuthError,
     groups_from_claims,
     parse_bearer_token,
+    token_client_id,
     validate_cognito_token,
 )
 from civilai_platform.models.entities import MembershipStatus, Role, TenantStatus, role_at_least
@@ -53,6 +54,7 @@ def resolve_auth_context(
             role=role,
             is_platform_admin=is_platform_admin,
             cognito_groups=groups,
+            cognito_client_id=None,
         )
 
     token = parse_bearer_token(authorization)
@@ -77,6 +79,7 @@ def resolve_auth_context(
         role=role,
         is_platform_admin=is_platform_admin,
         cognito_groups=groups_from_claims(claims),
+        cognito_client_id=token_client_id(claims),
     )
 
 
@@ -100,18 +103,27 @@ def require_membership(ctx: AuthContext, minimum: Role = Role.VIEWER) -> None:
         raise AuthError("Insufficient role", 403)
 
 
-def is_trust_reviewer(ctx: AuthContext) -> bool:
-    """SME Trust Console reviewers — Cognito group, no firm membership required."""
-    return TRUST_REVIEWER_GROUP in ctx.cognito_groups
+def is_trust_console_reader(ctx: AuthContext) -> bool:
+    """Trust Console lake reader — Cognito ``trust-reviewer`` **or** Trust Hosted UI client.
+
+    The Trust Amplify app uses a dedicated Cognito app client. Any authenticated
+    session from that client is a Trust Console session (no firm membership).
+    The ``trust-reviewer`` group remains the longer-term invite gate.
+    """
+    if TRUST_REVIEWER_GROUP in ctx.cognito_groups:
+        return True
+    trust_client = get_settings().cognito_trust_app_client_id
+    return bool(trust_client and ctx.cognito_client_id == trust_client)
 
 
 def require_data_proxy_reader(ctx: AuthContext) -> None:
-    """Lake read proxy: firm VIEWER membership **or** Cognito trust-reviewer group.
+    """Lake read proxy: firm VIEWER membership **or** Trust Console session.
 
-    Trust Console SMEs are invited into ``trust-reviewer`` without a product firm.
-    Data-proxy paths are read-only lake passthrough (PII off) — no tenant scope.
+    Trust Console SMEs authenticate via the Trust Hosted UI client (and optionally
+    the ``trust-reviewer`` group) without a product firm. Data-proxy paths are
+    read-only lake passthrough (PII off) — no tenant scope.
     """
-    if is_trust_reviewer(ctx) or ctx.is_platform_admin:
+    if is_trust_console_reader(ctx) or ctx.is_platform_admin:
         return
     require_tenant(ctx)
     require_membership(ctx, Role.VIEWER)
