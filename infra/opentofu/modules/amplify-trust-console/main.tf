@@ -1,7 +1,6 @@
-# Trust Console Amplify app — Stage 3 sketch (not wired into UAT apply yet).
-#
-# Instantiation is gated by environments/uat `create_amplify_trust_app` (default false).
-# See docs/TRUST-CONSOLE-AMPLIFY.md before the first plan/apply.
+# Trust Console Amplify app — separate WEB_COMPUTE app on *.amplifyapp.com.
+# Same civil-ai-fe repo as product Amplify; VITE_CIVILAI_TRUST_CONSOLE=true only here.
+# See docs/TRUST-CONSOLE-AMPLIFY.md.
 
 variable "environment" {
   type = string
@@ -30,11 +29,6 @@ variable "cognito_user_pool_id" {
   type = string
 }
 
-variable "cognito_client_id" {
-  type        = string
-  description = "Dedicated Trust Console Hosted UI app client (not the product web client)."
-}
-
 variable "cognito_hosted_ui_base" {
   type = string
 }
@@ -54,11 +48,13 @@ variable "basic_auth_password" {
   type      = string
   sensitive = true
   default   = ""
+  description = "Optional HTTP Basic Auth on the Trust branch. Empty = Cognito-only (preferred for SME share links)."
 }
 
 locals {
   # Include environment so multi-env applies do not collide on Amplify app name.
-  name = "${var.environment}-civilai-trust-console"
+  name       = "${var.environment}-civilai-trust-console"
+  branch_url = "https://${var.branch_name}.${aws_amplify_app.trust.default_domain}"
 }
 
 data "aws_iam_policy_document" "amplify_assume" {
@@ -85,6 +81,35 @@ resource "aws_iam_role" "amplify" {
 resource "aws_iam_role_policy_attachment" "amplify_backend" {
   role       = aws_iam_role.amplify.name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess-Amplify"
+}
+
+# Dedicated Hosted UI client — callbacks use this app's default domain (known after
+# aws_amplify_app.trust is created). Client id is injected on the branch so we avoid
+# a cycle with app-level environment_variables.
+resource "aws_cognito_user_pool_client" "trust" {
+  name         = "civilai-trust-fe-${var.environment}"
+  user_pool_id = var.cognito_user_pool_id
+
+  generate_secret = false
+
+  callback_urls = [
+    "${local.branch_url}/auth/callback",
+  ]
+  # FE logout helper for *.amplifyapp.com lands on www.civil1.ai/login (basic-auth
+  # safe); also allow the Trust app's own /login for Cognito-only flows.
+  logout_urls = [
+    "${local.branch_url}/login",
+    "https://www.civil1.ai/login",
+  ]
+
+  allowed_oauth_flows_user_pool_client = true
+  allowed_oauth_flows                  = ["code"]
+  allowed_oauth_scopes                 = ["email", "openid", "profile"]
+  supported_identity_providers         = ["COGNITO"]
+
+  explicit_auth_flows = [
+    "ALLOW_REFRESH_TOKEN_AUTH",
+  ]
 }
 
 resource "aws_amplify_app" "trust" {
@@ -115,10 +140,10 @@ resource "aws_amplify_app" "trust" {
           - node_modules/**/*
   EOT
 
+  # App-level env shared by branches. Cognito client id is branch-only (see below).
   environment_variables = {
     VITE_CIVILAI_PLATFORM_MODE          = "true"
     VITE_CIVILAI_PLATFORM_API           = var.platform_api_base
-    VITE_CIVILAI_COGNITO_CLIENT_ID      = var.cognito_client_id
     VITE_CIVILAI_COGNITO_HOSTED_UI_BASE = var.cognito_hosted_ui_base
     VITE_MAPBOX_PUBLIC_TOKEN            = var.mapbox_public_token
     VITE_CIVILAI_AGENT_DEV_MODE         = "false"
@@ -130,6 +155,15 @@ resource "aws_amplify_app" "trust" {
   tags = {
     Environment = var.environment
     Service     = "trust-console"
+  }
+
+  # H0-AMPLIFY: this resource must never share app_id with product civilai-fe
+  # (d3joxyeudajkza). Name + separate IAM role keep identity distinct.
+  lifecycle {
+    precondition {
+      condition     = local.name != "civilai-fe"
+      error_message = "Trust Amplify app name must not collide with product civilai-fe."
+    }
   }
 }
 
@@ -146,6 +180,12 @@ resource "aws_amplify_branch" "main" {
     "${var.basic_auth_username}:${var.basic_auth_password}"
   ) : null
 
+  # Branch overrides merge over app-level env — client id lives here to break the
+  # amplify_app ↔ cognito_client cycle (callbacks need default_domain).
+  environment_variables = {
+    VITE_CIVILAI_COGNITO_CLIENT_ID = aws_cognito_user_pool_client.trust.id
+  }
+
   lifecycle {
     ignore_changes = [basic_auth_credentials]
   }
@@ -160,5 +200,9 @@ output "default_domain" {
 }
 
 output "branch_url" {
-  value = "https://${var.branch_name}.${aws_amplify_app.trust.default_domain}"
+  value = local.branch_url
+}
+
+output "cognito_client_id" {
+  value = aws_cognito_user_pool_client.trust.id
 }

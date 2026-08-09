@@ -52,6 +52,9 @@ github_access_token = "ghp_..."
 
 create_platform_http_api = true
 create_amplify_app       = true
+# Second Amplify app for Trust Console (*.amplifyapp.com). Keep false until the
+# first plan is reviewed — must never destroy/replace product civilai-fe.
+# create_amplify_trust_app = true
 
 # Production Amplify branch (civil1.ai). Defaults to "main" post release-migration;
 # leaving it out is fine, but NEVER set it to "" on an environment where the branch
