@@ -57,7 +57,8 @@ variable "basic_auth_password" {
 }
 
 locals {
-  name = "civilai-trust-console"
+  # Include environment so multi-env applies do not collide on Amplify app name.
+  name = "${var.environment}-civilai-trust-console"
 }
 
 data "aws_iam_policy_document" "amplify_assume" {

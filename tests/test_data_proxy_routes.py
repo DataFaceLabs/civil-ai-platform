@@ -204,7 +204,8 @@ def test_passthrough_allows_explorer_tiles_and_serving(client: TestClient) -> No
 def test_passthrough_allows_trust_console_fleet(client: TestClient) -> None:
     """Trust Console Stage 2 fleet/health artifacts go through the data proxy."""
     tenant_id = _bootstrap(client, "user-a")
-    fleet = respx.get("http://data.test/v1/internal/trust/fleet").mock(
+    # Include env= so the mock fails if query params are dropped upstream.
+    fleet = respx.get("http://data.test/v1/internal/trust/fleet", params={"env": "dev"}).mock(
         return_value=httpx.Response(
             200,
             json={
@@ -224,6 +225,7 @@ def test_passthrough_allows_trust_console_fleet(client: TestClient) -> None:
     assert res.status_code == 200
     assert res.json()["snapshot_date"] == "2026-08-09"
     assert fleet.called
+    assert fleet.calls[0].request.url.params["env"] == "dev"
 
 
 @respx.mock
