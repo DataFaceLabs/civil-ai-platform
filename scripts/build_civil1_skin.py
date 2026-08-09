@@ -396,6 +396,15 @@ def build_body(document: DocumentType) -> None:
         "each section, as of the report date. Where a record could not be confirmed, the "
         "report says so explicitly rather than inferring a value.",
     )
+    # Class A absence (#514): no served fact is a legal instrument.
+    para(
+        document,
+        "Limitation — confidence Class A (legal instruments): this study does not serve "
+        "ordinances, plats, deeds, permits, or other controlling instruments as facts. "
+        "Every regulatory conclusion here is a dataset rendering of regulatory text, not "
+        "the instrument itself. Confirm controlling documents with the issuing authority "
+        "before design or entitlement filings.",
+    )
 
     heading(document, "2 Property", 1)
     heading(document, "2.1 Site Overview", 2)
