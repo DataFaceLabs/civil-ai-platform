@@ -13,6 +13,7 @@ OpenTofu manages **all** UAT AWS resources for the product stack:
 | `modules/api-gateway` | Lambda IAM + **HTTP API** + Cognito JWT authorizer |
 | `modules/bedrock` | Invoke policy for Lambda |
 | `modules/amplify-hosting` | Amplify app + `develop` branch + FE env vars |
+| `modules/amplify-trust-console` | Trust Console Amplify app sketch (`*.amplifyapp.com`; not wired into UAT apply yet — see `docs/TRUST-CONSOLE-AMPLIFY.md`) |
 | `modules/observability` | Lambda log group + error alarm |
 | `modules/agentcore` | Agent runtime IAM attachments |
 

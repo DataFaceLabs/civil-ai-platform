@@ -33,6 +33,7 @@ _PASSTHROUGH_ALLOWED_PREFIXES = (
     "fe/tap-cards/",
     "fe/tiles/",
     "fe/serving/",
+    "internal/trust/",
     "sections/",
 )
 
@@ -119,7 +120,14 @@ async def passthrough(
             except ValueError as exc:
                 raise HTTPException(400, "Request body must be JSON") from exc
     try:
-        upstream = client.passthrough(request.method, data_path, json=body)
+        # Query params live on Request, not in {data_path:path} — forward them so
+        # callers like internal/trust/fleet?env=dev reach the data API intact.
+        upstream = client.passthrough(
+            request.method,
+            data_path,
+            json=body,
+            params=dict(request.query_params),
+        )
     except httpx.TimeoutException as exc:
         budget = passthrough_timeout_sec(data_path)
         raise HTTPException(
