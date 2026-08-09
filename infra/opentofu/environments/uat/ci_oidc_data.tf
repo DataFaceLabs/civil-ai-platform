@@ -1,10 +1,12 @@
-# CI role for the scheduled data-side reconciliation checks (Wave 0).
+# CI role for the scheduled data-side reconciliation checks (Wave 0) and the
+# WAP audit-plane bind check (R1.4).
 #
 # Companion to ci_oidc.tf. That role watches materialization 4 (infrastructure);
 # this one lets `civil-ai-data` watch materializations 2 and 6 — the Athena DDL
-# applied-markers (H0-DDLHASH) and the lake audit trail (H0-MANIFEST).
+# applied-markers (H0-DDLHASH) and the lake audit trail (H0-MANIFEST) — plus
+# whether `:8001` still serves `dev/serving` (dev-plane-audit.yml via SSM).
 #
-# Why it exists: those two checks work today but only run when a human types
+# Why it exists: those checks work today but only run when a human types
 # `deploy-uat.sh reconcile`. On-demand auditing is the exact reason the ETJ fix
 # sat merged-but-unapplied for 5 days and the Austin Energy guard for months —
 # the detector existed, nobody ran it. A detector that depends on someone
@@ -70,9 +72,17 @@ data "aws_iam_policy_document" "ci_data_checks_assume" {
   }
 }
 
+variable "ci_data_checks_instance_id" {
+  type        = string
+  default     = "i-0658b3db749e9e5cb"
+  description = "Data-api EC2 instance id for WAP audit-plane SSM probes (dev-plane-audit workflow)."
+}
+
+data "aws_caller_identity" "current" {}
+
 resource "aws_iam_role" "ci_data_checks" {
   name                 = "${var.environment}-civilai-ci-data-checks"
-  description          = "Read-only role for scheduled lake reconciliation checks (H0-DDLHASH, H0-MANIFEST). S3 read on one bucket; no state access."
+  description          = "Read-only role for scheduled lake reconciliation + WAP audit-plane checks (H0-DDLHASH, H0-MANIFEST, R1.4). S3 read on one bucket; SSM shell on the data-api instance only; no state access."
   assume_role_policy   = data.aws_iam_policy_document.ci_data_checks_assume.json
   max_session_duration = 3600
 
@@ -118,6 +128,40 @@ resource "aws_iam_role_policy" "ci_data_checks_read" {
   name   = "${var.environment}-civilai-ci-data-checks-read"
   role   = aws_iam_role.ci_data_checks.id
   policy = data.aws_iam_policy_document.ci_data_checks_read.json
+}
+
+# WAP audit-plane probe (civil-ai-data `.github/workflows/dev-plane-audit.yml`).
+# GitHub-hosted runners cannot reach the Tailscale/CGNAT EIP on :8001; operators
+# already use SSM for data-api-dev. This grants the minimum: RunShellScript that
+# curls localhost:8001/healthz on the one known instance, then GetCommandInvocation
+# to read the JSON. No S3 writes, no docker, no broader SSM documents.
+data "aws_iam_policy_document" "ci_data_checks_ssm_audit" {
+  statement {
+    sid    = "SendAuditHealthzCommand"
+    effect = "Allow"
+    actions = [
+      "ssm:SendCommand",
+    ]
+    resources = [
+      "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript",
+      "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/${var.ci_data_checks_instance_id}",
+    ]
+  }
+
+  statement {
+    sid    = "ReadAuditCommandInvocation"
+    effect = "Allow"
+    actions = [
+      "ssm:GetCommandInvocation",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "ci_data_checks_ssm_audit" {
+  name   = "${var.environment}-civilai-ci-data-checks-ssm-audit"
+  role   = aws_iam_role.ci_data_checks.id
+  policy = data.aws_iam_policy_document.ci_data_checks_ssm_audit.json
 }
 
 # Explicit deny on mutation. The allow policy above grants no write verbs, so
