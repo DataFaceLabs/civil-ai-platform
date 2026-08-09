@@ -15,7 +15,8 @@ fills it and how the linter checks it:
 - ``LIST`` — an ordered list (recommendations).
 - ``DERIVED`` — computed from other content (exhibit list from callouts).
 - ``BRANDING`` — tenant identity (logo, firm block).
-- ``PROVENANCE`` — export/data lineage (skin version, serving snapshot).
+- ``PROVENANCE`` — export/data lineage (skin version, serving_build pin,
+  facts_retrieved_at cover vintage per #517).
 """
 
 from __future__ import annotations

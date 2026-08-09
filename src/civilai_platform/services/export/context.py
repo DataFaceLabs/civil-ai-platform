@@ -602,12 +602,18 @@ def build_export_context(
     }
     entity_id = str(site_payload.get("entity_id") or "").strip() or None
     serving_source = site_payload.get("serving_source") or site_payload.get("snapshot")
+    # #517: serving_build is the pipeline pin; facts_retrieved_at is customer cover vintage.
+    facts_retrieved_at = site_payload.get("facts_retrieved_at") or site_payload.get(
+        "retrieved_at"
+    )
     provenance = {
         "export_job_id": job_id,
         "skin_id": skin_id,
         "skin_version": "1",
         "entity_id": entity_id,
         "serving_source": serving_source,
+        "serving_build": serving_source,
+        "facts_retrieved_at": facts_retrieved_at,
         "data_plane": "dev"
         if data_api_base and data_api_base.rstrip("/").endswith(":8001")
         else "prod",
