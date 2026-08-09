@@ -124,6 +124,9 @@ module "api_gateway" {
   cognito_user_pool_arn      = module.cognito[0].user_pool_arn
   cognito_user_pool_id       = module.cognito[0].user_pool_id
   cognito_client_id          = module.cognito[0].app_client_id
+  # Trust Hosted UI client id — set via tfvars from amplify_trust_cognito_client_id
+  # output (avoids api_gateway ↔ amplify_trust cycle). Empty until Trust Amplify exists.
+  cognito_trust_client_id    = var.cognito_trust_client_id
   bedrock_policy_arn         = module.bedrock[0].invoke_policy_arn
   dynamodb_table_arn         = module.dynamodb[0].table_arn
   app_bucket_arn             = data.aws_s3_bucket.data_lake.arn
@@ -176,4 +179,21 @@ module "amplify" {
   cognito_hosted_ui_base      = var.create_platform_persistence ? module.cognito[0].hosted_ui_base_url : ""
   mapbox_public_token         = var.mapbox_access_token
   data_lake_bucket_name       = var.data_lake_bucket
+}
+
+# Trust Console — separate Amplify app (H0-AMPLIFY: must not replace product d3joxyeudajkza).
+# Cognito trust-reviewer group ships with module.cognito; dedicated Hosted UI client is
+# created inside amplify-trust-console once the app default_domain is known.
+module "amplify_trust" {
+  count  = var.create_amplify_trust_app ? 1 : 0
+  source = "../../modules/amplify-trust-console"
+
+  environment            = var.environment
+  repository_url         = var.fe_github_repository_url
+  github_access_token    = var.github_access_token
+  branch_name            = var.fe_branch_name
+  platform_api_base      = var.create_platform_http_api ? module.api_gateway[0].api_endpoint : "http://localhost:8001"
+  cognito_user_pool_id   = var.create_platform_persistence ? module.cognito[0].user_pool_id : ""
+  cognito_hosted_ui_base = var.create_platform_persistence ? module.cognito[0].hosted_ui_base_url : ""
+  mapbox_public_token    = var.mapbox_access_token
 }

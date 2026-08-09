@@ -116,6 +116,15 @@ resource "aws_cognito_user_pool_domain" "main" {
   user_pool_id = aws_cognito_user_pool.main.id
 }
 
+# Trust Console (hardening plan §5 Stage 3): SMEs invited into this group on the shared
+# pool. Amplify trust app + Hosted UI client (separate module) will require membership;
+# product civil1.ai continues to use the existing web client without this group gate.
+resource "aws_cognito_user_group" "trust_reviewer" {
+  name         = "trust-reviewer"
+  user_pool_id = aws_cognito_user_pool.main.id
+  description  = "Data Trust Console reviewers (land/feasibility SMEs)"
+}
+
 data "aws_caller_identity" "current" {}
 
 output "user_pool_id" {
@@ -136,4 +145,8 @@ output "user_pool_domain" {
 
 output "hosted_ui_base_url" {
   value = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com"
+}
+
+output "trust_reviewer_group_name" {
+  value = aws_cognito_user_group.trust_reviewer.name
 }

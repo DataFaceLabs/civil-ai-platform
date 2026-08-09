@@ -1,11 +1,12 @@
 """Platform routes proxying the civil-ai-data typed-tool manifest (contract §7).
 
-Authenticated-platform-member baseline only (Role.VIEWER) — there is no tenant
-dimension on lake reads (see data_access_api_contract.md §2), so this router is
-deliberately not nested under /v1/projects/{project_id}.
+Auth: firm VIEWER membership **or** Cognito ``trust-reviewer`` group (Trust Console
+SMEs without a product firm). There is no tenant dimension on lake reads (see
+data_access_api_contract.md §2), so this router is deliberately not nested under
+/v1/projects/{project_id}.
 
 PII scope is never exposed through these routes: every call passes
-include_pii=False (the DataProxyClient default). Revisit once Cognito auth is live.
+include_pii=False (the DataProxyClient default).
 """
 
 from typing import Annotated, Any
@@ -14,10 +15,10 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from civilai_platform.api.deps import tenant_ctx
-from civilai_platform.auth.authz import require_membership
+from civilai_platform.api.deps import get_auth_context
+from civilai_platform.auth.authz import require_data_proxy_reader
 from civilai_platform.auth.context import AuthContext
-from civilai_platform.models.entities import Role
+from civilai_platform.auth.jwt import AuthError
 from civilai_platform.services.data_proxy import DataProxyClient, passthrough_timeout_sec
 from civilai_platform.services.data_routing import data_api_base_for_request
 
@@ -33,12 +34,19 @@ _PASSTHROUGH_ALLOWED_PREFIXES = (
     "fe/tap-cards/",
     "fe/tiles/",
     "fe/serving/",
+    "internal/trust/",
     "sections/",
 )
 
 
-def _viewer_ctx(ctx: Annotated[AuthContext, Depends(tenant_ctx)]) -> AuthContext:
-    require_membership(ctx, Role.VIEWER)
+def _data_proxy_reader(
+    ctx: Annotated[AuthContext, Depends(get_auth_context)],
+) -> AuthContext:
+    """Firm VIEWER **or** Cognito ``trust-reviewer`` (no firm membership)."""
+    try:
+        require_data_proxy_reader(ctx)
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
     return ctx
 
 
@@ -54,7 +62,7 @@ class ResolveBody(BaseModel):
 @router.post("/entities/resolve")
 def resolve(
     body: ResolveBody,
-    _ctx: Annotated[AuthContext, Depends(_viewer_ctx)],
+    _ctx: Annotated[AuthContext, Depends(_data_proxy_reader)],
     client: Annotated[DataProxyClient, Depends(get_data_proxy)],
 ) -> dict[str, Any]:
     return client.resolve_parcel(address=body.address, parcel_id=body.parcel_id)
@@ -64,7 +72,7 @@ def resolve(
 def section_facts(
     section_id: str,
     entity_id: str,
-    _ctx: Annotated[AuthContext, Depends(_viewer_ctx)],
+    _ctx: Annotated[AuthContext, Depends(_data_proxy_reader)],
     client: Annotated[DataProxyClient, Depends(get_data_proxy)],
 ) -> dict[str, Any]:
     return client.get_section_facts(entity_id, section_id)
@@ -73,7 +81,7 @@ def section_facts(
 @router.get("/fe/site/by-entity/{entity_id}")
 def site_by_entity(
     entity_id: str,
-    _ctx: Annotated[AuthContext, Depends(_viewer_ctx)],
+    _ctx: Annotated[AuthContext, Depends(_data_proxy_reader)],
     client: Annotated[DataProxyClient, Depends(get_data_proxy)],
 ) -> dict[str, Any]:
     return client.get_site(entity_id)
@@ -82,7 +90,7 @@ def site_by_entity(
 @router.get("/entities/{entity_id}/determinations")
 def determinations(
     entity_id: str,
-    _ctx: Annotated[AuthContext, Depends(_viewer_ctx)],
+    _ctx: Annotated[AuthContext, Depends(_data_proxy_reader)],
     client: Annotated[DataProxyClient, Depends(get_data_proxy)],
 ) -> dict[str, Any]:
     return client.run_determinations(entity_id)
@@ -92,7 +100,7 @@ def determinations(
 async def passthrough(
     data_path: str,
     request: Request,
-    _ctx: Annotated[AuthContext, Depends(_viewer_ctx)],
+    _ctx: Annotated[AuthContext, Depends(_data_proxy_reader)],
     client: Annotated[DataProxyClient, Depends(get_data_proxy)],
 ) -> Response:
     """Status-preserving proxy for the FE's read-only site-data calls.
@@ -119,7 +127,14 @@ async def passthrough(
             except ValueError as exc:
                 raise HTTPException(400, "Request body must be JSON") from exc
     try:
-        upstream = client.passthrough(request.method, data_path, json=body)
+        # Query params live on Request, not in {data_path:path} — forward them so
+        # callers like internal/trust/fleet?env=dev reach the data API intact.
+        upstream = client.passthrough(
+            request.method,
+            data_path,
+            json=body,
+            params=dict(request.query_params),
+        )
     except httpx.TimeoutException as exc:
         budget = passthrough_timeout_sec(data_path)
         raise HTTPException(

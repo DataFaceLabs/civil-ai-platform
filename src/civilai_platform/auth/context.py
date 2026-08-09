@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from civilai_platform.models.entities import Role
 
@@ -10,3 +10,6 @@ class AuthContext:
     tenant_id: str | None = None
     role: Role | None = None
     is_platform_admin: bool = False
+    # Cognito groups from the access token (e.g. trust-reviewer). Empty in dev-auth
+    # unless X-Dev-Cognito-Groups is set.
+    cognito_groups: tuple[str, ...] = field(default_factory=tuple)

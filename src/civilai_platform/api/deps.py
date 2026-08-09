@@ -24,6 +24,7 @@ async def get_auth_context(
     x_tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
     x_dev_user_id: Annotated[str | None, Header(alias="X-Dev-User-Id")] = None,
     x_dev_tenant_id: Annotated[str | None, Header(alias="X-Dev-Tenant-Id")] = None,
+    x_dev_cognito_groups: Annotated[str | None, Header(alias="X-Dev-Cognito-Groups")] = None,
 ) -> AuthContext:
     try:
         return resolve_auth_context(
@@ -31,6 +32,7 @@ async def get_auth_context(
             x_tenant_id,
             dev_user_id=x_dev_user_id,
             dev_tenant_id=x_dev_tenant_id,
+            dev_cognito_groups=x_dev_cognito_groups,
         )
     except AuthError as exc:
         raise _auth_error(exc) from exc

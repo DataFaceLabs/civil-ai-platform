@@ -160,6 +160,7 @@ class DataProxyClient:
         data_path: str,
         *,
         json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         timeout: float | None = None,
     ) -> httpx.Response:
         """Forward a read request to the data API and return the raw response.
@@ -176,7 +177,13 @@ class DataProxyClient:
             passthrough_timeout_sec(data_path) if timeout is None else timeout
         )
         with httpx.Client(timeout=effective_timeout) as client:
-            return client.request(method, url, headers=self._headers(), json=json)
+            return client.request(
+                method,
+                url,
+                headers=self._headers(),
+                json=json,
+                params=params,
+            )
 
     def get_section_facts(self, entity_id: str, section_id: str) -> dict[str, Any]:
         return self.request("GET", f"/v1/sections/{section_id}/facts/{entity_id}")

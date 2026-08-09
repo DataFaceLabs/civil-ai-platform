@@ -108,6 +108,7 @@ def test_create_export_renders_real_docx_and_byo_exhibit(client: TestClient) -> 
     assert job["docx_s3_key"].endswith("/study.docx")
     assert job["provenance"]["entity_id"] == "entity-123"
     assert job["provenance"]["serving_source"] == "snapshot-test"
+    assert job["provenance"]["serving_build"] == "snapshot-test"
     checks = {finding["check"] for finding in job["findings"]}
     assert "placeholder_leak" not in checks
     assert "uuid_leak" not in checks

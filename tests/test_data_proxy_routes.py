@@ -66,6 +66,59 @@ def test_resolve_requires_membership(client: TestClient) -> None:
 
 
 @respx.mock
+def test_trust_reviewer_passthrough_without_firm_membership(client: TestClient) -> None:
+    """Cognito trust-reviewer group may read lake data with no X-Tenant-Id / membership."""
+    fleet = respx.get("http://data.test/v1/internal/trust/fleet", params={"env": "dev"}).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "env": "dev",
+                "source_uri": "s3://civilai-data/dev/serving/_snapshot_health.json",
+                "snapshot_date": "2026-08-09",
+                "counties": [{"county": "Travis", "entity_count": 42}],
+                "invariant_total": 0,
+                "invariant_failures": [],
+            },
+        )
+    )
+    res = client.get(
+        "/v1/data-proxy/passthrough/internal/trust/fleet?env=dev",
+        headers={
+            "X-Dev-User-Id": "sme-trust-only",
+            "X-Dev-Cognito-Groups": "trust-reviewer",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["counties"][0]["county"] == "Travis"
+    assert fleet.called
+
+
+@respx.mock
+def test_trust_reviewer_can_resolve_address_without_tenant(client: TestClient) -> None:
+    respx.post("http://data.test/v1/fe/site/resolve-address").mock(
+        return_value=httpx.Response(200, json={"entity_id": "ent-trust"})
+    )
+    res = client.post(
+        "/v1/data-proxy/passthrough/fe/site/resolve-address",
+        json={"address": "17809 Loch Linnhe Lp, Pflugerville, TX 78660"},
+        headers={
+            "X-Dev-User-Id": "sme-trust-only",
+            "X-Dev-Cognito-Groups": "trust-reviewer",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["entity_id"] == "ent-trust"
+
+
+def test_non_trust_user_without_membership_still_forbidden(client: TestClient) -> None:
+    res = client.get(
+        "/v1/data-proxy/passthrough/internal/trust/fleet?env=dev",
+        headers={"X-Dev-User-Id": "random-user"},
+    )
+    assert res.status_code == 400  # require_tenant → missing X-Tenant-Id
+
+
+@respx.mock
 def test_resolve_happy_path(client: TestClient) -> None:
     tenant_id = _bootstrap(client, "user-a")
     respx.post("http://data.test/v1/entities/resolve").mock(
@@ -198,6 +251,34 @@ def test_passthrough_allows_explorer_tiles_and_serving(client: TestClient) -> No
     assert serving_res.json()["snapshot_date"] == "2026-07-24d"
     assert tiles.called
     assert serving.called
+
+
+@respx.mock
+def test_passthrough_allows_trust_console_fleet(client: TestClient) -> None:
+    """Trust Console Stage 2 fleet/health artifacts go through the data proxy."""
+    tenant_id = _bootstrap(client, "user-a")
+    # Include env= so the mock fails if query params are dropped upstream.
+    fleet = respx.get("http://data.test/v1/internal/trust/fleet", params={"env": "dev"}).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "env": "dev",
+                "source_uri": "s3://civilai-data/dev/serving/_snapshot_health.json",
+                "snapshot_date": "2026-08-09",
+                "counties": [{"county": "Travis", "entity_count": 1}],
+                "invariant_total": 0,
+                "invariant_failures": [],
+            },
+        )
+    )
+    res = client.get(
+        "/v1/data-proxy/passthrough/internal/trust/fleet?env=dev",
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 200
+    assert res.json()["snapshot_date"] == "2026-08-09"
+    assert fleet.called
+    assert fleet.calls[0].request.url.params["env"] == "dev"
 
 
 @respx.mock

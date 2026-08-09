@@ -39,6 +39,22 @@ output "amplify_branch_url" {
   value = var.create_amplify_app ? module.amplify[0].branch_url : null
 }
 
+output "amplify_trust_app_id" {
+  value = var.create_amplify_trust_app ? module.amplify_trust[0].app_id : null
+}
+
+output "amplify_trust_branch_url" {
+  value = var.create_amplify_trust_app ? module.amplify_trust[0].branch_url : null
+}
+
+output "amplify_trust_cognito_client_id" {
+  value = var.create_amplify_trust_app ? module.amplify_trust[0].cognito_client_id : null
+}
+
+output "cognito_trust_reviewer_group" {
+  value = var.create_platform_persistence ? module.cognito[0].trust_reviewer_group_name : null
+}
+
 output "local_platform_env" {
   value = <<-EOT
     CIVILAI_DATA_API_BASE=${module.data_api_ec2.data_api_base_url_http}

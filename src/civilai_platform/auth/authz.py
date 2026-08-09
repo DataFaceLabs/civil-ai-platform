@@ -1,5 +1,11 @@
 from civilai_platform.auth.context import AuthContext
-from civilai_platform.auth.jwt import AuthError, parse_bearer_token, validate_cognito_token
+from civilai_platform.auth.jwt import (
+    TRUST_REVIEWER_GROUP,
+    AuthError,
+    groups_from_claims,
+    parse_bearer_token,
+    validate_cognito_token,
+)
 from civilai_platform.models.entities import MembershipStatus, Role, TenantStatus, role_at_least
 from civilai_platform.services.platform_tenant import is_platform_admin_user
 from civilai_platform.settings import get_settings
@@ -20,6 +26,7 @@ def resolve_auth_context(
     tenant_header: str | None,
     dev_user_id: str | None = None,
     dev_tenant_id: str | None = None,
+    dev_cognito_groups: str | None = None,
 ) -> AuthContext:
     settings = get_settings()
     store = get_store()
@@ -36,12 +43,16 @@ def resolve_auth_context(
                 role = membership.role
             elif is_platform_admin:
                 role = Role.PLATFORM_ADMIN
+        groups = tuple(
+            g.strip() for g in (dev_cognito_groups or "").split(",") if g.strip()
+        )
         return AuthContext(
             user_id=dev_user_id,
             email=email,
             tenant_id=tenant_id,
             role=role,
             is_platform_admin=is_platform_admin,
+            cognito_groups=groups,
         )
 
     token = parse_bearer_token(authorization)
@@ -65,6 +76,7 @@ def resolve_auth_context(
         tenant_id=str(tenant_id) if tenant_id else None,
         role=role,
         is_platform_admin=is_platform_admin,
+        cognito_groups=groups_from_claims(claims),
     )
 
 
@@ -86,6 +98,23 @@ def require_membership(ctx: AuthContext, minimum: Role = Role.VIEWER) -> None:
         raise AuthError("Forbidden", 403)
     if not role_at_least(ctx.role, minimum):
         raise AuthError("Insufficient role", 403)
+
+
+def is_trust_reviewer(ctx: AuthContext) -> bool:
+    """SME Trust Console reviewers — Cognito group, no firm membership required."""
+    return TRUST_REVIEWER_GROUP in ctx.cognito_groups
+
+
+def require_data_proxy_reader(ctx: AuthContext) -> None:
+    """Lake read proxy: firm VIEWER membership **or** Cognito trust-reviewer group.
+
+    Trust Console SMEs are invited into ``trust-reviewer`` without a product firm.
+    Data-proxy paths are read-only lake passthrough (PII off) — no tenant scope.
+    """
+    if is_trust_reviewer(ctx) or ctx.is_platform_admin:
+        return
+    require_tenant(ctx)
+    require_membership(ctx, Role.VIEWER)
 
 
 def require_platform_admin(ctx: AuthContext) -> None:

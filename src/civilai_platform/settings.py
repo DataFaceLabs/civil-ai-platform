@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Cognito JWT validation
     cognito_user_pool_id: str | None = None
     cognito_app_client_id: str | None = None
+    # Trust Console Amplify Hosted UI client (civilai-trust-fe-{env}). Access tokens
+    # from this client must be accepted alongside the product web client.
+    cognito_trust_app_client_id: str | None = None
     dev_auth: bool = Field(
         default=True,
         description="Accept X-Dev-User-Id / X-Dev-Tenant-Id headers when true",

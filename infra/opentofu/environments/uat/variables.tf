@@ -158,6 +158,18 @@ variable "create_amplify_app" {
   default = false
 }
 
+variable "cognito_trust_client_id" {
+  type        = string
+  default     = ""
+  description = "Trust Amplify Cognito app client id (module.amplify_trust cognito_client_id). Wire into API Gateway JWT audience so Trust Hosted UI tokens reach Lambda."
+}
+
+variable "create_amplify_trust_app" {
+  type        = bool
+  default     = false
+  description = "Second Amplify app for Trust Console (*.amplifyapp.com). Default false until first plan is reviewed — never shares app_id with product civilai-fe."
+}
+
 variable "ses_from_email" {
   type        = string
   default     = ""

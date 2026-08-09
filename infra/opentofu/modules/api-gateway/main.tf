@@ -19,6 +19,12 @@ variable "cognito_client_id" {
   type = string
 }
 
+variable "cognito_trust_client_id" {
+  type        = string
+  default     = ""
+  description = "Trust Console Hosted UI app client id. Added to JWT authorizer audience + Lambda env so Trust Amplify tokens are accepted."
+}
+
 variable "bedrock_policy_arn" {
   type = string
 }
@@ -257,8 +263,9 @@ resource "aws_lambda_function" "platform" {
         CIVILAI_DEV_DATA_API_BASE     = var.dev_data_api_base_url
         CIVILAI_DEV_DATA_ORIGINS      = join(",", var.dev_data_origins)
         CIVILAI_DATA_SERVICE_KEY      = var.data_service_key
-        CIVILAI_COGNITO_USER_POOL_ID  = var.cognito_user_pool_id
-        CIVILAI_COGNITO_APP_CLIENT_ID = var.cognito_client_id
+        CIVILAI_COGNITO_USER_POOL_ID         = var.cognito_user_pool_id
+        CIVILAI_COGNITO_APP_CLIENT_ID        = var.cognito_client_id
+        CIVILAI_COGNITO_TRUST_APP_CLIENT_ID  = var.cognito_trust_client_id
         # Live Strands agent (false). Local tests / e2e-platform.sh override to true.
         CIVILAI_AGENT_DRY_RUN = "false"
         # Return HTTP immediately for agent-runs and tenant LLM invoke; complete via
@@ -324,7 +331,9 @@ resource "aws_apigatewayv2_authorizer" "cognito" {
   name             = "cognito"
 
   jwt_configuration {
-    audience = [var.cognito_client_id]
+    # Product web client + Trust Console client (when provisioned). Cognito access
+    # tokens present client_id as the JWT audience claim API Gateway validates.
+    audience = compact([var.cognito_client_id, var.cognito_trust_client_id])
     issuer   = "https://cognito-idp.${var.aws_region}.amazonaws.com/${var.cognito_user_pool_id}"
   }
 }
