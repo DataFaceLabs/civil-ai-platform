@@ -201,6 +201,32 @@ def test_passthrough_allows_explorer_tiles_and_serving(client: TestClient) -> No
 
 
 @respx.mock
+def test_passthrough_allows_trust_console_fleet(client: TestClient) -> None:
+    """Trust Console Stage 2 fleet/health artifacts go through the data proxy."""
+    tenant_id = _bootstrap(client, "user-a")
+    fleet = respx.get("http://data.test/v1/internal/trust/fleet").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "env": "dev",
+                "source_uri": "s3://civilai-data/dev/serving/_snapshot_health.json",
+                "snapshot_date": "2026-08-09",
+                "counties": [{"county": "Travis", "entity_count": 1}],
+                "invariant_total": 0,
+                "invariant_failures": [],
+            },
+        )
+    )
+    res = client.get(
+        "/v1/data-proxy/passthrough/internal/trust/fleet?env=dev",
+        headers=_headers("user-a", tenant_id),
+    )
+    assert res.status_code == 200
+    assert res.json()["snapshot_date"] == "2026-08-09"
+    assert fleet.called
+
+
+@respx.mock
 def test_passthrough_get_forwards_with_service_key(client: TestClient) -> None:
     tenant_id = _bootstrap(client, "user-a")
     route = respx.get("http://data.test/v1/sections/flood/facts/ent-1").mock(

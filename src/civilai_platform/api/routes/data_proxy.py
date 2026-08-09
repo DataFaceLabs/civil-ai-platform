@@ -33,6 +33,7 @@ _PASSTHROUGH_ALLOWED_PREFIXES = (
     "fe/tap-cards/",
     "fe/tiles/",
     "fe/serving/",
+    "internal/trust/",
     "sections/",
 )
 
