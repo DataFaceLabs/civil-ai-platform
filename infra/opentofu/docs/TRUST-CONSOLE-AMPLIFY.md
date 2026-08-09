@@ -42,10 +42,14 @@ same Amplify app / civil1.ai hostname is not.
    + trust Hosted UI client. Confirm product `module.amplify` / `d3joxyeudajkza` is
    **not** destroyed or replaced (H0-AMPLIFY).
 3. `tofu apply` only after plan review.
-4. Invite SMEs into `trust-reviewer`; gate Trust Console routes on group membership
-   (FE + optional platform authorizer later).
-5. Confirm product Amplify env does **not** set `VITE_CIVILAI_TRUST_CONSOLE`.
-6. After the trust default domain is known, add
+4. Invite SMEs into `trust-reviewer`. Platform data-proxy accepts that Cognito group
+   for read-only lake passthrough **without** firm membership.
+5. After Trust Amplify exists, copy `amplify_trust_cognito_client_id` into
+   `cognito_trust_client_id` in local `terraform.tfvars` and re-apply so the API
+   Gateway JWT authorizer audience includes the Trust Hosted UI client (otherwise
+   Trust tokens get edge `Unauthorized` before Lambda).
+6. Confirm product Amplify env does **not** set `VITE_CIVILAI_TRUST_CONSOLE`.
+7. After the trust default domain is known, add
    `https://develop.<trust-default-domain>` to `cors_origins` if Explorer S3/PMTiles
    needs it (platform API CORS is already `*`).
 

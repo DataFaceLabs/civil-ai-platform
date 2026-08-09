@@ -124,6 +124,9 @@ module "api_gateway" {
   cognito_user_pool_arn      = module.cognito[0].user_pool_arn
   cognito_user_pool_id       = module.cognito[0].user_pool_id
   cognito_client_id          = module.cognito[0].app_client_id
+  # Trust Hosted UI client id — set via tfvars from amplify_trust_cognito_client_id
+  # output (avoids api_gateway ↔ amplify_trust cycle). Empty until Trust Amplify exists.
+  cognito_trust_client_id    = var.cognito_trust_client_id
   bedrock_policy_arn         = module.bedrock[0].invoke_policy_arn
   dynamodb_table_arn         = module.dynamodb[0].table_arn
   app_bucket_arn             = data.aws_s3_bucket.data_lake.arn
