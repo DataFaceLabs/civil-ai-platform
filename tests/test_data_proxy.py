@@ -133,12 +133,20 @@ def test_passthrough_timeout_site_paths_default_longer() -> None:
     assert passthrough_timeout_sec("fe/site/by-address") == 90.0
     assert passthrough_timeout_sec("fe/site/resolve-address") == 90.0
     assert passthrough_timeout_sec("fe/site/by-parcel") == 90.0
-    assert passthrough_timeout_sec("sections/flood/facts/ent-1") == 30.0
+    assert passthrough_timeout_sec("sections/flood/facts/ent-1") == 90.0
+    assert passthrough_timeout_sec("sections/zoning/facts/ent-1") == 90.0
+    assert passthrough_timeout_sec("catalog/sections") == 30.0
 
 
 def test_passthrough_timeout_site_from_env(monkeypatch) -> None:
     monkeypatch.setenv("CIVILAI_DATA_SITE_PASSTHROUGH_TIMEOUT_SEC", "120")
     assert passthrough_timeout_sec("fe/site/by-address") == 120.0
+
+
+def test_passthrough_timeout_section_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("CIVILAI_DATA_SECTION_PASSTHROUGH_TIMEOUT_SEC", "120")
+    assert passthrough_timeout_sec("sections/zoning/facts/ent-1") == 120.0
+    assert passthrough_timeout_sec("fe/site/by-address") == 90.0
 
 
 @respx.mock
