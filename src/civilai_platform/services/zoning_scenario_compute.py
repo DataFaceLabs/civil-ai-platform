@@ -592,7 +592,7 @@ def compute_zoning_scenario(
                 evidence = list(dsi_evidence)
                 origin = "regtext"
             elif code in _DSI_CODES and code not in dsi_texts:
-                text = f"{code} for {proposed_code}: confirm in adopted land-dev code."
+                text = ""
                 open_gaps.append(code)
                 origin = "composed"
             else:
@@ -637,10 +637,7 @@ def compute_zoning_scenario(
                             f"{hits[0].get('excerpt', '')}"
                         ).strip(": ")
                     else:
-                        text = (
-                            f"{code} for {proposed_code}: "
-                            "confirm in adopted land-dev code."
-                        )
+                        text = ""
                         open_gaps.append(code)
                     origin = "regtext" if hits else "composed"
 

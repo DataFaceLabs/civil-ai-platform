@@ -53,6 +53,25 @@ def test_zoning_scenario_round_trip(client: TestClient) -> None:
         "baseline_jurisdiction_key": "coa_full",
         "effective_jurisdiction_key": "coa_full",
         "active_scenario_id": "sc-1",
+        "original_jurisdiction_snapshot": {
+            "captured_at": "2026-08-06T11:00:00Z",
+            "entries": [
+                {"code": "TX_PLACE_NAME", "label": "Municipality", "display": "Austin"},
+                {"code": "COUNTY_NAME", "label": "County", "display": "Travis"},
+            ],
+            "zoning_code": "SF-2",
+            "zoning_text": "SF-2.",
+            "site_context_values": {
+                "TX_PLACE_NAME": "Austin",
+                "COUNTY_NAME": "Travis",
+                "IN_CITY_LIMITS": "true",
+            },
+            "zoning_field_values": {
+                "ZONING_REGS": "SF-2.",
+                "GOVERNING_JURIS": "Austin",
+                "MIN_LOT_SIZE": "5,750 sq ft",
+            },
+        },
         "scenarios": [
             {
                 "scenario_id": "sc-1",
@@ -107,12 +126,96 @@ def test_zoning_scenario_round_trip(client: TestClient) -> None:
     body = patch.json()
     assert body["zoning_scenario"]["active_scenario_id"] == "sc-1"
     assert body["zoning_scenario"]["scenarios"][0]["intent"]["proposed_zoning_code"] == "MF-4"
+    snap = body["zoning_scenario"]["original_jurisdiction_snapshot"]
+    assert snap is not None
+    assert snap["zoning_code"] == "SF-2"
+    assert snap["site_context_values"]["TX_PLACE_NAME"] == "Austin"
+    assert snap["zoning_field_values"]["MIN_LOT_SIZE"] == "5,750 sq ft"
 
     reloaded = client.get(f"/v1/projects/{project_id}/state", headers=h)
     assert reloaded.status_code == 200
     zs = reloaded.json()["zoning_scenario"]
     assert zs["schema_version"] == 1
     assert zs["scenarios"][0]["baseline"]["structured"]["zoning_code"] == "SF-2"
+    assert zs["original_jurisdiction_snapshot"]["zoning_field_values"]["GOVERNING_JURIS"] == (
+        "Austin"
+    )
+
+
+def test_original_jurisdiction_snapshot_survives_proposed_accept(client: TestClient) -> None:
+    """Regression: snapshot must not be stripped when analysis_basis becomes proposed."""
+    _tenant_id, project_id, h = _create_project(client, user_id="zs-snap-user")
+    payload = {
+        "schema_version": 1,
+        "analysis_basis": "proposed",
+        "baseline_jurisdiction_key": "tx:travis:austin",
+        "effective_jurisdiction_key": "tx:williamson:leander",
+        "active_scenario_id": "sc-1",
+        "original_jurisdiction_snapshot": {
+            "captured_at": "2026-08-11T15:00:00Z",
+            "entries": [
+                {"code": "TX_PLACE_NAME", "label": "Municipality", "display": "Austin"},
+            ],
+            "zoning_code": "SF-2",
+            "zoning_text": "SF-2.",
+            "site_context_values": {"TX_PLACE_NAME": "Austin", "COUNTY_NAME": "Travis"},
+            "zoning_field_values": {
+                "ZONING_REGS": "SF-2.",
+                "GOVERNING_JURIS": "Austin",
+                "MIN_LOT_SIZE": "5,750 sq ft",
+                "LDC_REFERENCE": "Austin LDC",
+            },
+        },
+        "scenarios": [
+            {
+                "scenario_id": "sc-1",
+                "label": "Change jurisdiction to Leander",
+                "status": "accepted",
+                "created_at": "2026-08-11T15:10:00Z",
+                "updated_at": "2026-08-11T15:10:00Z",
+                "created_by_user_id": "zs-snap-user",
+                "intent": {
+                    "proposed_zoning_code": "HC",
+                    "jurisdiction_key": "tx:williamson:leander",
+                    "keep_overlays": True,
+                },
+                "baseline": {
+                    "fields": {
+                        "ZONING_REGS": {"value": "SF-2.", "status": "review", "origin": "lake"}
+                    },
+                    "structured": {"zoning_code": "SF-2", "jurisdiction_key": "tx:travis:austin"},
+                },
+                "proposed": {
+                    "fields": {
+                        "ZONING_REGS": {"value": "HC", "status": "review", "origin": "composed"}
+                    },
+                    "structured": {
+                        "zoning_code": "HC",
+                        "jurisdiction_key": "tx:williamson:leander",
+                    },
+                },
+                "comparisons": [],
+                "risk_summary": {"overall": "medium"},
+                "computation": {"status": "succeeded"},
+            }
+        ],
+    }
+    patch = client.patch(
+        f"/v1/projects/{project_id}/state",
+        json={"zoning_scenario": payload},
+        headers=h,
+    )
+    assert patch.status_code == 200, patch.text
+
+    reloaded = client.get(f"/v1/projects/{project_id}/state", headers=h)
+    assert reloaded.status_code == 200
+    zs = reloaded.json()["zoning_scenario"]
+    assert zs["analysis_basis"] == "proposed"
+    snap = zs["original_jurisdiction_snapshot"]
+    assert snap["zoning_code"] == "SF-2"
+    assert snap["entries"][0]["display"] == "Austin"
+    assert snap["zoning_field_values"]["MIN_LOT_SIZE"] == "5,750 sq ft"
+    assert snap["site_context_values"]["COUNTY_NAME"] == "Travis"
 
 
 def test_analysis_basis_proposed_rejects_draft_status(client: TestClient) -> None:
