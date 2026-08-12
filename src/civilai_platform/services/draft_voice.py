@@ -12,7 +12,6 @@ import re
 DRAFT_VOICE_DIRECTIVE = """
 Draft voice (ACE house style - always apply):
 - Write short paragraphs: typically 1-3 sentences each. Prefer blank-line breaks between paragraphs in markdown.
-- Do not use markdown headings (``#`` / ``##``) or bold markers (``**...**``). Plain paragraphs only — export templates already supply section titles.
 - One topic per subsection or paragraph cluster; do not dump every field into a single wall of text.
 - Paraphrase governed field values into professional engineering prose. Never paste multi-topic Compose/field dumps verbatim.
 - Do not invent "(See Exhibit: ...)" callouts. Only cite an exhibit when AVAILABLE_EXHIBITS (or an equivalent project exhibit list) names that sheet/map, or when a governed citation clearly identifies it.
