@@ -130,10 +130,17 @@ def _render_user_prompt(
     field_context: dict[str, str],
     fields_unchanged: bool,
 ) -> str:
+    field_block = _field_context_block(field_context)
+
     if mode == "generate":
         parts = [rendered_template]
         if user_guidance:
             parts.append(f"Additional guidance:\n{user_guidance}")
+        # Always attach governed facts for generate. Prompt Lab templates may omit
+        # {{field.*}} tokens (or use stale codes); the agent still needs the values
+        # in the user prompt, and the admin debug viewer reads AgentRun.request.
+        if field_block:
+            parts.append(f"Governed fields:\n{field_block}")
         return "\n\n".join(part for part in parts if part.strip()).strip()
 
     parts = [
@@ -148,10 +155,8 @@ def _render_user_prompt(
         parts.append(f"Current draft:\n{section_body_plain.strip()}")
     if fields_unchanged:
         parts.append("Governed field values are unchanged since the last turn.")
-    else:
-        block = _field_context_block(field_context)
-        if block:
-            parts.append(f"Governed fields:\n{block}")
+    elif field_block:
+        parts.append(f"Governed fields:\n{field_block}")
     parts.append(f"Analyst request:\n{user_guidance or 'Refine the current draft.'}")
     return "\n\n".join(parts)
 

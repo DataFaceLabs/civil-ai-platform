@@ -88,6 +88,9 @@ def test_resolve_section_prompt_uses_prompt_lab_config(monkeypatch) -> None:
     assert "Draft voice (ACE house style" in resolved.system_prompt
     assert "District: MF-4" in resolved.rendered_prompt
     assert "Additional guidance:\nKeep it concise." in resolved.rendered_prompt
+    assert "Governed fields:" in resolved.rendered_prompt
+    assert "ZONING_DISTRICT: MF-4" in resolved.rendered_prompt
+    assert "PROPERTY_ADDRESS: 123 Main St" in resolved.rendered_prompt
     assert "Voice reminder:" in resolved.rendered_prompt
     assert "do not invent" in resolved.rendered_prompt.lower()
     assert resolved.model_preset == "sonnet46"
@@ -124,6 +127,38 @@ def test_refine_prompt_includes_current_draft_and_analyst_request() -> None:
     assert "Current draft:\nAustin Water may serve the site." in resolved.rendered_prompt
     assert "Governed field values are unchanged" in resolved.rendered_prompt
     assert "Analyst request:\nAdd the wastewater caveat." in resolved.rendered_prompt
+
+
+def test_generate_prompt_includes_governed_fields_without_template_tokens() -> None:
+    """Custom Prompt Lab prose with no {{field.*}} tokens still gets facts attached."""
+    resolved = resolve_section_agent_prompt(
+        {
+            "modelPreset": "haiku",
+            "sectionSystemPrompt": "System",
+            "sections": {
+                "zoning": {
+                    "userPromptTemplate": (
+                        'You are drafting the "Zoning" portion of a real estate '
+                        "feasibility report."
+                    ),
+                    "inputFieldCodes": [],
+                    "guardrails": {},
+                }
+            },
+        },
+        config_version=1,
+        section_id="zoning",
+        field_context={
+            "ZONING_DISTRICT": "MF-4",
+            "ZONING_REGS": "MF-4 multifamily",
+        },
+        mode="generate",
+    )
+
+    assert 'You are drafting the "Zoning" portion' in resolved.rendered_prompt
+    assert "Governed fields:" in resolved.rendered_prompt
+    assert "ZONING_DISTRICT: MF-4" in resolved.rendered_prompt
+    assert "ZONING_REGS: MF-4 multifamily" in resolved.rendered_prompt
 
 
 def test_compose_scrubs_robotic_stems_from_field_values() -> None:
