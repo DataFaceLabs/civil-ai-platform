@@ -14,6 +14,33 @@ def test_compose_section_template_removes_empty_field_lines() -> None:
     assert prompt == "Draft zoning.\nDistrict: MF-4"
 
 
+def test_compose_section_template_keeps_mixed_token_lines() -> None:
+    prompt = compose_section_template(
+        "size:{{field.PROPERTY_ACRES}} , land use:{{field.TCAD_LAND_USE}}, "
+        "{{field.EXISTING_DEVELOPMENT}}",
+        field_context={
+            "PROPERTY_ACRES": "10.00",
+            "EXISTING_DEVELOPMENT": "Barn",
+        },
+        input_field_codes=[],
+    )
+
+    assert prompt == "size:10.00 , land use:, Barn"
+
+
+def test_compose_section_template_resolves_legacy_tcad_aliases() -> None:
+    prompt = compose_section_template(
+        "Land use: {{field.TCAD_LAND_USE}}\nLegal: {{field.TCAD_LEGAL_DESCRIPTION}}",
+        field_context={
+            "CAD_LAND_USE": "A1 — SFR",
+            "CAD_LEGAL_DESCRIPTION": "LOT 10 BLK O",
+        },
+        input_field_codes=[],
+    )
+
+    assert prompt == "Land use: A1 — SFR\nLegal: LOT 10 BLK O"
+
+
 def test_resolve_section_prompt_uses_prompt_lab_config(monkeypatch) -> None:
     monkeypatch.setenv("CIVILAI_TAVILY_API_KEY", "test-key")
     config = {

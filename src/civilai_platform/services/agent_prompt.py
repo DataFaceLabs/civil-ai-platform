@@ -24,6 +24,17 @@ from civilai_platform.services.search_policy import (
 
 _FIELD_TOKEN = re.compile(r"\{\{field\.([A-Z0-9_]+)\}\}")
 
+# Legacy Prompt Lab tokens from the TCAD_* → CAD_* rename.
+_LEGACY_FIELD_CODE_ALIASES: dict[str, str] = {
+    "TCAD_INFO": "CAD_INFO",
+    "TCAD_DISCREPANCIES": "CAD_DISCREPANCIES",
+    "TCAD_VALUATION": "CAD_VALUATION",
+    "TCAD_LEGAL_DESCRIPTION": "CAD_LEGAL_DESCRIPTION",
+    "TCAD_LAND_USE": "CAD_LAND_USE",
+    "TCAD_YEAR_BUILT": "CAD_YEAR_BUILT",
+    "TCAD_DEED_REFERENCE": "CAD_DEED_REFERENCE",
+}
+
 
 @dataclass(frozen=True)
 class ResolvedSectionAgentPrompt:
@@ -50,15 +61,28 @@ def _nonempty(value: object) -> str:
     return str(value or "").strip()
 
 
-def _remove_missing_token_line(prompt: str, code: str) -> str:
-    """Mirror FE Prompt Lab behavior: omit a whole line when its field is empty."""
-    token = "{{field." + code + "}}"
-    kept = [line for line in prompt.splitlines() if token not in line]
-    return "\n".join(kept)
-
-
 def _sanitized_field(field_context: dict[str, str], code: str) -> str:
-    return sanitize_field_value_for_draft(_nonempty(field_context.get(code)))
+    direct = sanitize_field_value_for_draft(_nonempty(field_context.get(code)))
+    if direct:
+        return direct
+    canonical = _LEGACY_FIELD_CODE_ALIASES.get(code)
+    if not canonical or canonical == code:
+        return ""
+    return sanitize_field_value_for_draft(_nonempty(field_context.get(canonical)))
+
+
+def _omit_empty_field_token_lines(template: str, field_context: dict[str, str]) -> str:
+    """Drop lines whose field tokens are all empty; keep mixed-token lines.
+
+    One missing sibling token (for example a stale TCAD_* code) must not wipe
+    filled neighbors on the same Prompt Lab line.
+    """
+    kept: list[str] = []
+    for line in template.splitlines():
+        codes = _FIELD_TOKEN.findall(line)
+        if not codes or any(_sanitized_field(field_context, code) for code in codes):
+            kept.append(line)
+    return "\n".join(kept)
 
 
 def compose_section_template(
@@ -71,12 +95,12 @@ def compose_section_template(
 
     Field values are scrubbed of robotic Compose stems before substitution so the
     model is not asked to echo "rule extraction pending" into section.body.
+
+    ``input_field_codes`` is retained for call-site compatibility with Prompt Lab
+    configs; line omission is driven by tokens present in ``template``.
     """
-    codes = list(dict.fromkeys([*input_field_codes, *_FIELD_TOKEN.findall(template)]))
-    prompt = template
-    for code in codes:
-        if not _sanitized_field(field_context, code):
-            prompt = _remove_missing_token_line(prompt, code)
+    _ = input_field_codes
+    prompt = _omit_empty_field_token_lines(template, field_context)
     prompt = _FIELD_TOKEN.sub(
         lambda match: _sanitized_field(field_context, match.group(1)),
         prompt,

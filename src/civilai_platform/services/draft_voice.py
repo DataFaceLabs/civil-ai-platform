@@ -19,7 +19,7 @@ Draft voice (ACE house style - always apply):
 - When governed flood fields include a FIRM ``panel_id``, cite that panel id (and effective date when present) in Environmental floodplain prose.
 - Never paste the project site address into agency / Development Services contact sentences — contacts are agency name and phone only.
 - Never invent permits, capacities, will-serve commitments, or unstated regulatory conclusions.
-- Replace robotic stems such as "rule extraction pending" or "Pending user input." with an honest verification gap (what is unknown and who to confirm with).
+- Exclude robotic stems such as "rule extraction pending" or "Pending user input."
 """.strip()
 
 _ROBOTIC_STEMS = (
