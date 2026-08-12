@@ -88,9 +88,9 @@ def test_resolve_section_prompt_uses_prompt_lab_config(monkeypatch) -> None:
     assert "Draft voice (ACE house style" in resolved.system_prompt
     assert "District: MF-4" in resolved.rendered_prompt
     assert "Additional guidance:\nKeep it concise." in resolved.rendered_prompt
-    assert "Governed fields:" in resolved.rendered_prompt
-    assert "ZONING_DISTRICT: MF-4" in resolved.rendered_prompt
-    assert "PROPERTY_ADDRESS: 123 Main St" in resolved.rendered_prompt
+    assert "Governed fields:" not in resolved.rendered_prompt
+    assert "ZONING_DISTRICT: MF-4" not in resolved.rendered_prompt
+    assert resolved.field_context["PROPERTY_ADDRESS"] == "123 Main St"
     assert "Voice reminder:" in resolved.rendered_prompt
     assert "do not invent" in resolved.rendered_prompt.lower()
     assert resolved.model_preset == "sonnet46"
@@ -129,8 +129,8 @@ def test_refine_prompt_includes_current_draft_and_analyst_request() -> None:
     assert "Analyst request:\nAdd the wastewater caveat." in resolved.rendered_prompt
 
 
-def test_generate_prompt_includes_governed_fields_from_input_codes_without_template_tokens() -> None:
-    """Custom Prompt Lab prose with no {{field.*}} tokens still gets allowlisted facts."""
+def test_generate_prompt_scopes_field_context_without_appending_governed_block() -> None:
+    """Allowlisted facts stay on field_context; resolved prompt is template-only."""
     resolved = resolve_section_agent_prompt(
         {
             "modelPreset": "haiku",
@@ -157,10 +157,12 @@ def test_generate_prompt_includes_governed_fields_from_input_codes_without_templ
     )
 
     assert 'You are drafting the "Zoning" portion' in resolved.rendered_prompt
-    assert "Governed fields:" in resolved.rendered_prompt
-    assert "ZONING_DISTRICT: MF-4" in resolved.rendered_prompt
-    assert "ZONING_REGS: MF-4 multifamily" in resolved.rendered_prompt
-    assert "WATER_SERVICE" not in resolved.rendered_prompt
+    assert "Governed fields:" not in resolved.rendered_prompt
+    assert "ZONING_DISTRICT: MF-4" not in resolved.rendered_prompt
+    assert resolved.field_context == {
+        "ZONING_DISTRICT": "MF-4",
+        "ZONING_REGS": "MF-4 multifamily",
+    }
     assert "WATER_SERVICE" not in resolved.field_context
 
 
@@ -203,8 +205,10 @@ def test_section_draft_field_context_filters_to_prompt_lab_inputs() -> None:
     }
     assert "ZONING_DISTRICT" not in resolved.rendered_prompt
     assert "WATER_SERVICE" not in resolved.rendered_prompt
-    assert "PARCEL_ID: R123" in resolved.rendered_prompt
-    assert "PROPERTY_ADDRESS: 13903 FM 812" in resolved.rendered_prompt
+    assert "Parcel: R123" in resolved.rendered_prompt
+    assert "Governed fields:" not in resolved.rendered_prompt
+    assert "PROPERTY_ADDRESS: 13903 FM 812" not in resolved.rendered_prompt
+    assert resolved.field_context["PROPERTY_ADDRESS"] == "13903 FM 812"
 
 
 def test_empty_input_codes_still_keeps_template_tokens_and_always_keeps() -> None:

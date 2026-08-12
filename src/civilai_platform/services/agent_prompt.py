@@ -146,18 +146,6 @@ def compose_section_template(
     return re.sub(r"\n{3,}", "\n\n", prompt).strip()
 
 
-def _field_context_block(field_context: dict[str, str]) -> str:
-    return "\n".join(
-        f"{code}: {value}"
-        for code, value in sorted(
-            (code, sanitize_field_value_for_draft(raw.strip()))
-            for code, raw in field_context.items()
-            if raw.strip()
-        )
-        if value
-    )
-
-
 def _render_user_prompt(
     *,
     mode: Literal["generate", "refine"],
@@ -165,20 +153,12 @@ def _render_user_prompt(
     user_guidance: str,
     thread_memory: str,
     section_body_plain: str,
-    field_context: dict[str, str],
     fields_unchanged: bool,
 ) -> str:
-    field_block = _field_context_block(field_context)
-
     if mode == "generate":
         parts = [rendered_template]
         if user_guidance:
             parts.append(f"Additional guidance:\n{user_guidance}")
-        # Always attach governed facts for generate. Prompt Lab templates may omit
-        # {{field.*}} tokens (or use stale codes); the agent still needs the values
-        # in the user prompt, and the admin debug viewer reads AgentRun.request.
-        if field_block:
-            parts.append(f"Governed fields:\n{field_block}")
         return "\n\n".join(part for part in parts if part.strip()).strip()
 
     parts = [
@@ -193,8 +173,6 @@ def _render_user_prompt(
         parts.append(f"Current draft:\n{section_body_plain.strip()}")
     if fields_unchanged:
         parts.append("Governed field values are unchanged since the last turn.")
-    elif field_block:
-        parts.append(f"Governed fields:\n{field_block}")
     parts.append(f"Analyst request:\n{user_guidance or 'Refine the current draft.'}")
     return "\n\n".join(parts)
 
@@ -242,7 +220,6 @@ def resolve_section_agent_prompt(
         user_guidance=user_guidance.strip(),
         thread_memory=thread_memory,
         section_body_plain=section_body_plain,
-        field_context=scoped_field_context,
         fields_unchanged=fields_unchanged,
     )
     has_exhibits = bool(_sanitized_field(scoped_field_context, "AVAILABLE_EXHIBITS"))
