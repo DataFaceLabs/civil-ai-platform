@@ -129,8 +129,8 @@ def test_refine_prompt_includes_current_draft_and_analyst_request() -> None:
     assert "Analyst request:\nAdd the wastewater caveat." in resolved.rendered_prompt
 
 
-def test_generate_prompt_includes_governed_fields_without_template_tokens() -> None:
-    """Custom Prompt Lab prose with no {{field.*}} tokens still gets facts attached."""
+def test_generate_prompt_includes_governed_fields_from_input_codes_without_template_tokens() -> None:
+    """Custom Prompt Lab prose with no {{field.*}} tokens still gets allowlisted facts."""
     resolved = resolve_section_agent_prompt(
         {
             "modelPreset": "haiku",
@@ -141,7 +141,7 @@ def test_generate_prompt_includes_governed_fields_without_template_tokens() -> N
                         'You are drafting the "Zoning" portion of a real estate '
                         "feasibility report."
                     ),
-                    "inputFieldCodes": [],
+                    "inputFieldCodes": ["ZONING_DISTRICT", "ZONING_REGS"],
                     "guardrails": {},
                 }
             },
@@ -151,6 +151,7 @@ def test_generate_prompt_includes_governed_fields_without_template_tokens() -> N
         field_context={
             "ZONING_DISTRICT": "MF-4",
             "ZONING_REGS": "MF-4 multifamily",
+            "WATER_SERVICE": "Austin Water",
         },
         mode="generate",
     )
@@ -159,6 +160,81 @@ def test_generate_prompt_includes_governed_fields_without_template_tokens() -> N
     assert "Governed fields:" in resolved.rendered_prompt
     assert "ZONING_DISTRICT: MF-4" in resolved.rendered_prompt
     assert "ZONING_REGS: MF-4 multifamily" in resolved.rendered_prompt
+    assert "WATER_SERVICE" not in resolved.rendered_prompt
+    assert "WATER_SERVICE" not in resolved.field_context
+
+
+def test_section_draft_field_context_filters_to_prompt_lab_inputs() -> None:
+    resolved = resolve_section_agent_prompt(
+        {
+            "modelPreset": "haiku",
+            "sectionSystemPrompt": "System",
+            "sections": {
+                "parcel": {
+                    "userPromptTemplate": (
+                        "Draft parcel language.\nParcel: {{field.PARCEL_ID}}"
+                    ),
+                    "inputFieldCodes": ["PARCEL_ID", "PROPERTY_ACRES"],
+                    "searchContextHint": "{{field.GOVERNING_JURIS}} parcel records",
+                    "guardrails": {},
+                }
+            },
+        },
+        config_version=1,
+        section_id="parcel",
+        field_context={
+            "PARCEL_ID": "R123",
+            "PROPERTY_ACRES": "10.5",
+            "PROPERTY_ADDRESS": "13903 FM 812",
+            "GOVERNING_JURIS": "Austin ETJ",
+            "ZONING_DISTRICT": "MF-4",
+            "WATER_SERVICE": "Austin Water",
+            "AVAILABLE_EXHIBITS": "Site Plan",
+        },
+        mode="generate",
+    )
+
+    assert resolved.field_context == {
+        "AVAILABLE_EXHIBITS": "Site Plan",
+        "GOVERNING_JURIS": "Austin ETJ",
+        "PARCEL_ID": "R123",
+        "PROPERTY_ACRES": "10.5",
+        "PROPERTY_ADDRESS": "13903 FM 812",
+    }
+    assert "ZONING_DISTRICT" not in resolved.rendered_prompt
+    assert "WATER_SERVICE" not in resolved.rendered_prompt
+    assert "PARCEL_ID: R123" in resolved.rendered_prompt
+    assert "PROPERTY_ADDRESS: 13903 FM 812" in resolved.rendered_prompt
+
+
+def test_empty_input_codes_still_keeps_template_tokens_and_always_keeps() -> None:
+    resolved = resolve_section_agent_prompt(
+        {
+            "modelPreset": "haiku",
+            "sectionSystemPrompt": "System",
+            "sections": {
+                "parcel": {
+                    "userPromptTemplate": "Acres: {{field.PROPERTY_ACRES}}",
+                    "inputFieldCodes": [],
+                    "guardrails": {},
+                }
+            },
+        },
+        config_version=1,
+        section_id="parcel",
+        field_context={
+            "PROPERTY_ACRES": "10.5",
+            "PROPERTY_ADDRESS": "13903 FM 812",
+            "ZONING_DISTRICT": "MF-4",
+        },
+        mode="generate",
+    )
+
+    assert resolved.field_context == {
+        "PROPERTY_ACRES": "10.5",
+        "PROPERTY_ADDRESS": "13903 FM 812",
+    }
+    assert "ZONING_DISTRICT" not in resolved.rendered_prompt
 
 
 def test_compose_scrubs_robotic_stems_from_field_values() -> None:

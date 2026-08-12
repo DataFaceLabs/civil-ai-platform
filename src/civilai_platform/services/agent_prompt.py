@@ -47,6 +47,7 @@ class ResolvedSectionAgentPrompt:
     prompt_template: str
     rendered_prompt: str
     input_field_codes: tuple[str, ...]
+    field_context: dict[str, str]
     model_preset: str
     model_id: str
     temperature: float
@@ -85,6 +86,43 @@ def _omit_empty_field_token_lines(template: str, field_context: dict[str, str]) 
     return "\n".join(kept)
 
 
+def _field_codes_in_text(*templates: str) -> set[str]:
+    codes: set[str] = set()
+    for template in templates:
+        codes.update(_FIELD_TOKEN.findall(template or ""))
+    return codes
+
+
+_ALWAYS_KEEP_FIELD_CODES = frozenset({"PROPERTY_ADDRESS", "AVAILABLE_EXHIBITS"})
+
+
+def section_draft_field_context(
+    field_context: dict[str, str],
+    *,
+    input_field_codes: list[str] | tuple[str, ...],
+    template: str,
+    search_context_hint: str = "",
+) -> dict[str, str]:
+    """Restrict section-draft context to Prompt Lab inputs and template tokens.
+
+    Always retains PROPERTY_ADDRESS and AVAILABLE_EXHIBITS when present so
+    canonical address and exhibit citation policy still work.
+    """
+    allow = {
+        str(code).strip()
+        for code in input_field_codes
+        if str(code).strip()
+    }
+    allow |= _field_codes_in_text(template, search_context_hint)
+    allow |= _ALWAYS_KEEP_FIELD_CODES
+    scoped: dict[str, str] = {}
+    for code in sorted(allow):
+        value = _sanitized_field(field_context, code)
+        if value:
+            scoped[code] = value
+    return scoped
+
+
 def compose_section_template(
     template: str,
     *,
@@ -96,8 +134,8 @@ def compose_section_template(
     Field values are scrubbed of robotic Compose stems before substitution so the
     model is not asked to echo "rule extraction pending" into section.body.
 
-    ``input_field_codes`` is retained for call-site compatibility with Prompt Lab
-    configs; line omission is driven by tokens present in ``template``.
+    ``input_field_codes`` is applied upstream via ``section_draft_field_context``;
+    line omission here is driven by tokens present in ``template``.
     """
     _ = input_field_codes
     prompt = _omit_empty_field_token_lines(template, field_context)
@@ -186,9 +224,16 @@ def resolve_section_agent_prompt(
         if isinstance(raw_codes, list)
         else ()
     )
+    raw_hint = _nonempty(section.get("searchContextHint"))
+    scoped_field_context = section_draft_field_context(
+        field_context,
+        input_field_codes=input_codes,
+        template=template,
+        search_context_hint=raw_hint,
+    )
     rendered_template = compose_section_template(
         template,
-        field_context=field_context,
+        field_context=scoped_field_context,
         input_field_codes=input_codes,
     )
     rendered_prompt = _render_user_prompt(
@@ -197,10 +242,10 @@ def resolve_section_agent_prompt(
         user_guidance=user_guidance.strip(),
         thread_memory=thread_memory,
         section_body_plain=section_body_plain,
-        field_context=field_context,
+        field_context=scoped_field_context,
         fields_unchanged=fields_unchanged,
     )
-    has_exhibits = bool(_sanitized_field(field_context, "AVAILABLE_EXHIBITS"))
+    has_exhibits = bool(_sanitized_field(scoped_field_context, "AVAILABLE_EXHIBITS"))
     reminder = draft_voice_user_reminder(has_exhibits=has_exhibits)
     rendered_prompt = f"{rendered_prompt}\n\n{reminder}".strip() if rendered_prompt else reminder
 
@@ -221,14 +266,16 @@ def resolve_section_agent_prompt(
         if isinstance(section_web_enabled, bool)
         else bool(web.get("enabled", False))
     )
-    raw_hint = _nonempty(section.get("searchContextHint"))
     hint = substitute_search_hint_tokens(
         raw_hint,
         active_section_id=section_id,
-        field_context=field_context,
+        field_context=scoped_field_context,
     )
     # Prompt Lab stores {{field.CODE}} tokens; support them in search hints too.
-    hint = _FIELD_TOKEN.sub(lambda match: _nonempty(field_context.get(match.group(1))), hint)
+    hint = _FIELD_TOKEN.sub(
+        lambda match: _nonempty(scoped_field_context.get(match.group(1))),
+        hint,
+    )
     search_policy = {
         "enabled": configured_enabled and web_search_provider_configured(),
         "search_context_hint": hint,
@@ -250,6 +297,7 @@ def resolve_section_agent_prompt(
         prompt_template=template,
         rendered_prompt=rendered_prompt,
         input_field_codes=input_codes,
+        field_context=scoped_field_context,
         model_preset=model_preset,
         model_id=resolve_model_id(model_preset),
         temperature=temperature,

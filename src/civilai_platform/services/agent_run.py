@@ -267,6 +267,7 @@ def _build_context_payload(
         guardrails = resolved_prompt.guardrails
         search_run_policy = resolved_prompt.search_run_policy
         prompt_config = resolved_prompt.metadata()
+        resolved_field_context = dict(resolved_prompt.field_context)
     else:
         search_run_policy = resolve_search_run_policy(
             tenant_llm,
