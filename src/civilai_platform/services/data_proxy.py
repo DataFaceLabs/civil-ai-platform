@@ -23,6 +23,7 @@ _SITE_PASSTHROUGH_SUFFIXES = (
     "fe/site/resolve-address",
     "fe/site/by-address",
     "fe/site/by-parcel",
+    "fe/site/by-entity",
 )
 
 
