@@ -17,6 +17,7 @@ from civilai_platform.services.agent_prompt import resolve_section_agent_prompt
 from civilai_platform.services.audit import record_audit
 from civilai_platform.services.project_activity import record_project_activity
 from civilai_platform.services.search_policy import resolve_chat_prompts, resolve_search_run_policy
+from civilai_platform.settings import get_settings
 from civilai_platform.store.base import PlatformStore
 from civilai_platform.store.keys import agent_run_s3_prefix
 
@@ -267,6 +268,7 @@ def _build_context_payload(
         guardrails = resolved_prompt.guardrails
         search_run_policy = resolved_prompt.search_run_policy
         prompt_config = resolved_prompt.metadata()
+        resolved_field_context = dict(resolved_prompt.field_context)
     else:
         search_run_policy = resolve_search_run_policy(
             tenant_llm,
@@ -315,7 +317,7 @@ def _execute_agent_run(
     *,
     actor_role: str | None,
 ) -> AgentRun:
-    dry_run = _truthy_env("CIVILAI_AGENT_DRY_RUN", "1")
+    dry_run = get_settings().agent_dry_run
     tenant_llm = context_payload.get("llm_config") or {}
     try:
         response = _invoke_strands_agent(context_payload, dry_run=dry_run)
