@@ -254,6 +254,54 @@ def test_passthrough_rejects_paths_outside_allowlist(client: TestClient) -> None
 
 
 @respx.mock
+def test_passthrough_allows_dsi_resolve_and_regtext(client: TestClient) -> None:
+    """Create-time zone change retrieves DSI + Municode own-index via the proxy."""
+    tenant_id = _bootstrap(client, "user-a")
+    dsi = respx.get("http://data.test/v1/dsi/resolve").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "jurisdiction_key": "georgetown",
+                "zoning_code": "MF-1",
+                "found": True,
+                "freshness": "current",
+            },
+        )
+    )
+    ensure = respx.post("http://data.test/v1/regtext/ensure").mock(
+        return_value=httpx.Response(200, json={"corpus_version": "municode-job-1"})
+    )
+    search = respx.post("http://data.test/v1/regtext/search").mock(
+        return_value=httpx.Response(200, json={"hits": []})
+    )
+    dsi_res = client.get(
+        "/v1/data-proxy/passthrough/dsi/resolve?jurisdiction_key=georgetown&zoning_code=MF-1",
+        headers=_headers("user-a", tenant_id),
+    )
+    ensure_res = client.post(
+        "/v1/data-proxy/passthrough/regtext/ensure",
+        json={"jurisdiction_key": "georgetown"},
+        headers=_headers("user-a", tenant_id),
+    )
+    search_res = client.post(
+        "/v1/data-proxy/passthrough/regtext/search",
+        json={"jurisdiction_key": "georgetown", "query": "minimum lot size"},
+        headers=_headers("user-a", tenant_id),
+    )
+    assert dsi_res.status_code == 200
+    assert dsi_res.json()["found"] is True
+    assert dsi.calls[0].request.url.params["jurisdiction_key"] == "georgetown"
+    assert dsi.calls[0].request.url.params["zoning_code"] == "MF-1"
+    assert ensure_res.status_code == 200
+    assert ensure_res.json()["corpus_version"] == "municode-job-1"
+    assert search_res.status_code == 200
+    assert search_res.json()["hits"] == []
+    assert dsi.called
+    assert ensure.called
+    assert search.called
+
+
+@respx.mock
 def test_passthrough_allows_explorer_tiles_and_serving(client: TestClient) -> None:
     """Explorer needs tiles manifest + serving current through the proxy."""
     tenant_id = _bootstrap(client, "user-a")
