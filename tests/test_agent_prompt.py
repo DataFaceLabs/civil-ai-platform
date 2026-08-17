@@ -211,6 +211,85 @@ def test_section_draft_field_context_filters_to_prompt_lab_inputs() -> None:
     assert resolved.field_context["PROPERTY_ADDRESS"] == "13903 FM 812"
 
 
+def test_parcel_section_drops_dsi_dimensionals_even_when_prompt_lab_selected_them() -> None:
+    resolved = resolve_section_agent_prompt(
+        {
+            "modelPreset": "haiku",
+            "sectionSystemPrompt": "System",
+            "sections": {
+                "parcel": {
+                    "userPromptTemplate": (
+                        "Parcel: {{field.PROPERTY_ADDRESS}}\n"
+                        "Lot: {{field.MIN_LOT_SIZE}}\n"
+                        "Zoning: {{field.ZONING_REGS}}"
+                    ),
+                    "inputFieldCodes": [
+                        "PROPERTY_ADDRESS",
+                        "GOVERNING_JURIS",
+                        "MIN_LOT_SIZE",
+                        "SETBACKS",
+                        "IMPERVIOUS_COVER_LIMIT",
+                        "ZONING_REGS",
+                        "ZONING_ANALYSIS_BASIS",
+                    ],
+                    "guardrails": {},
+                }
+            },
+        },
+        config_version=1,
+        section_id="parcel",
+        field_context={
+            "PROPERTY_ADDRESS": "RR 2338, Georgetown, TX",
+            "GOVERNING_JURIS": "Georgetown",
+            "MIN_LOT_SIZE": "12,000 sq ft",
+            "SETBACKS": "Front: 20 ft; Side: 10 ft; Rear: 10 ft",
+            "IMPERVIOUS_COVER_LIMIT": "50%",
+            "ZONING_REGS": "MF-1 — Sec. 6.02.080",
+            "ZONING_ANALYSIS_BASIS": "proposed",
+            "ZONING_SCENARIO_LABEL": "Rezone to MF-1",
+        },
+        mode="generate",
+    )
+
+    assert resolved.field_context == {
+        "GOVERNING_JURIS": "Georgetown",
+        "PROPERTY_ADDRESS": "RR 2338, Georgetown, TX",
+    }
+    assert "12,000 sq ft" not in resolved.rendered_prompt
+    assert "MIN_LOT_SIZE" not in resolved.rendered_prompt
+    assert "MF-1" not in resolved.rendered_prompt
+    assert "Rezone to MF-1" not in resolved.rendered_prompt
+    assert "RR 2338, Georgetown, TX" in resolved.rendered_prompt
+
+
+def test_zoning_section_keeps_dsi_dimensionals() -> None:
+    resolved = resolve_section_agent_prompt(
+        {
+            "modelPreset": "haiku",
+            "sectionSystemPrompt": "System",
+            "sections": {
+                "zoning": {
+                    "userPromptTemplate": "Zoning: {{field.ZONING_REGS}}\nLot: {{field.MIN_LOT_SIZE}}",
+                    "inputFieldCodes": ["ZONING_REGS", "MIN_LOT_SIZE"],
+                    "guardrails": {},
+                }
+            },
+        },
+        config_version=1,
+        section_id="zoning",
+        field_context={
+            "ZONING_REGS": "MF-1 — Sec. 6.02.080",
+            "MIN_LOT_SIZE": "12,000 sq ft",
+            "WATER_SERVICE": "Georgetown Utility",
+        },
+        mode="generate",
+    )
+    assert resolved.field_context == {
+        "MIN_LOT_SIZE": "12,000 sq ft",
+        "ZONING_REGS": "MF-1 — Sec. 6.02.080",
+    }
+
+
 def test_empty_input_codes_still_keeps_template_tokens_and_always_keeps() -> None:
     resolved = resolve_section_agent_prompt(
         {

@@ -310,6 +310,26 @@ def _build_context_payload(
     }
 
 
+def _trace_with_field_context(
+    trace: dict[str, Any],
+    field_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Echo the Prompt Lab–scoped field_context the agent actually received.
+
+    The FE debug panel used to store its pre-send map. Dry-run reports dump this
+    scoped map under "Field context:"; stamping it on ``trace_summary`` lets the
+    debug viewer show the same keys and values.
+    """
+    scoped = {
+        str(code).strip(): str(value).strip()
+        for code, value in field_context.items()
+        if str(code).strip() and str(value).strip()
+    }
+    if not scoped:
+        return dict(trace)
+    return {**trace, "field_context": scoped}
+
+
 def _execute_agent_run(
     store: PlatformStore,
     run: AgentRun,
@@ -321,6 +341,11 @@ def _execute_agent_run(
     tenant_llm = context_payload.get("llm_config") or {}
     try:
         response = _invoke_strands_agent(context_payload, dry_run=dry_run)
+        trace_summary = _trace_with_field_context(
+            dict(response.get("trace_summary") or {}),
+            dict(context_payload.get("field_context") or {}),
+        )
+        response = {**response, "trace_summary": trace_summary}
         prefix = _write_run_artifacts(
             tenant_id=run.tenant_id,
             project_id=run.project_id,
@@ -334,7 +359,7 @@ def _execute_agent_run(
                 "status": AgentRunStatus.SUCCEEDED,
                 "message": response.get("message"),
                 "artifacts": list(response.get("artifacts") or []),
-                "trace_summary": dict(response.get("trace_summary") or {}),
+                "trace_summary": trace_summary,
                 "guardrail_warnings": list(response.get("guardrail_warnings") or []),
                 "s3_prefix": prefix,
                 "updated_at": completed,

@@ -95,6 +95,27 @@ def _field_codes_in_text(*templates: str) -> set[str]:
 
 _ALWAYS_KEEP_FIELD_CODES = frozenset({"PROPERTY_ADDRESS", "AVAILABLE_EXHIBITS"})
 
+# Dimensional / DSI zoning codes belong on the Zoning section even if Parcel
+# Prompt Lab selected them as inputFieldCodes or template tokens.
+_ZONING_DSI_FIELD_CODES = frozenset(
+    {
+        "ZONING_REGS",
+        "ZONING_DISTRICT",
+        "MIN_LOT_SIZE",
+        "MIN_LOT_WIDTH",
+        "SETBACKS",
+        "MAX_BUILDING_COVERAGE",
+        "MAX_BUILDING_HEIGHT",
+        "IMPERVIOUS_COVER_LIMIT",
+        "IMPERVIOUS_REGS",
+        "EASEMENTS_SETBACKS",
+        "COMPATIBILITY_STDS",
+        "ZONING_ANALYSIS_BASIS",
+        "ZONING_SCENARIO_LABEL",
+    }
+)
+_ZONING_SECTION_IDS = frozenset({"zoning"})
+
 
 def section_draft_field_context(
     field_context: dict[str, str],
@@ -102,11 +123,13 @@ def section_draft_field_context(
     input_field_codes: list[str] | tuple[str, ...],
     template: str,
     search_context_hint: str = "",
+    section_id: str = "",
 ) -> dict[str, str]:
     """Restrict section-draft context to Prompt Lab inputs and template tokens.
 
     Always retains PROPERTY_ADDRESS and AVAILABLE_EXHIBITS when present so
-    canonical address and exhibit citation policy still work.
+    canonical address and exhibit citation policy still work. DSI dimensionals
+    are dropped unless the active section is zoning.
     """
     allow = {
         str(code).strip()
@@ -115,6 +138,8 @@ def section_draft_field_context(
     }
     allow |= _field_codes_in_text(template, search_context_hint)
     allow |= _ALWAYS_KEEP_FIELD_CODES
+    if str(section_id).strip() not in _ZONING_SECTION_IDS:
+        allow -= _ZONING_DSI_FIELD_CODES
     scoped: dict[str, str] = {}
     for code in sorted(allow):
         value = _sanitized_field(field_context, code)
@@ -208,6 +233,7 @@ def resolve_section_agent_prompt(
         input_field_codes=input_codes,
         template=template,
         search_context_hint=raw_hint,
+        section_id=section_id,
     )
     rendered_template = compose_section_template(
         template,
