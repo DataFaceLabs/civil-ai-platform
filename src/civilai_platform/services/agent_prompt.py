@@ -188,7 +188,7 @@ def _render_user_prompt(
 
     parts = [
         "You are refining an existing feasibility study section draft.",
-        "Follow the section drafting requirements and do not contradict governed field values.",
+        "Follow the section drafting requirements and do not contradict known site facts.",
     ]
     if rendered_template:
         parts.append(f"Section drafting requirements:\n{rendered_template}")
@@ -197,7 +197,7 @@ def _render_user_prompt(
     if section_body_plain.strip():
         parts.append(f"Current draft:\n{section_body_plain.strip()}")
     if fields_unchanged:
-        parts.append("Governed field values are unchanged since the last turn.")
+        parts.append("Known site facts are unchanged since the last turn.")
     parts.append(f"Analyst request:\n{user_guidance or 'Refine the current draft.'}")
     return "\n\n".join(parts)
 
@@ -219,7 +219,8 @@ def resolve_section_agent_prompt(
     section = dict(sections.get(section_id) or {})
     template = _nonempty(section.get("userPromptTemplate")) or (
         f"Draft concise feasibility-study language for the {section_id} section "
-        "using governed facts."
+        "from known site facts. If a topic is unknown, write that it is not "
+        "currently known and should be confirmed."
     )
     raw_codes = section.get("inputFieldCodes")
     input_codes = (
