@@ -5,6 +5,13 @@ from __future__ import annotations
 from civilai_platform.llm_defaults import ATX_CIVIL_SEARCH_DOMAINS, default_llm_lab_config
 
 
+def test_section_system_prompt_uses_unknown_fact_house_style() -> None:
+    prompt = default_llm_lab_config()["sectionSystemPrompt"]
+    assert "not currently known and should be confirmed" in prompt
+    assert "available field data" not in prompt.lower()
+    assert "Use only the field values provided" not in prompt
+
+
 def test_web_search_defaults_use_atx_civils_trusted_sources() -> None:
     domains = default_llm_lab_config()["webSearch"]["allowedDomains"]
 

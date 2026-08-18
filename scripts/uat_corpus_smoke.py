@@ -138,7 +138,7 @@ def _section_prompt(section: str, field_context: dict[str, str], guidance: str =
     lines = [f"{k}: {v}" for k, v in sorted(field_context.items())]
     parts = [f"Generate feasibility language for the {section} section."]
     if lines:
-        parts.append("Governed fields:\n" + "\n".join(lines))
+        parts.append("Known site facts:\n" + "\n".join(lines))
     if guidance.strip():
         parts.append(f"Analyst guidance:\n{guidance.strip()}")
     return "\n\n".join(parts)
