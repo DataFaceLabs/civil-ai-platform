@@ -14,7 +14,6 @@ import httpx
 from civilai_platform.models.zoning_scenario import (
     OrdinanceEvidence,
     ScenarioFieldValue,
-    ZoningChangeScenario,
     ZoningComputationMeta,
     ZoningFactBundle,
     ZoningFactComparison,
@@ -58,7 +57,7 @@ _DSI_CODES = frozenset(
 
 _CODE_QUERIES: dict[str, tuple[str, list[str]]] = {
     "ZONING_REGS": ("zoning district site development regulations", ["zoning"]),
-    "IMPERVIOUS_REGS": ("impervious cover watershed", ["impervious_cover", "environmental"]),
+    "IMPERVIOUS_REGS": ("impervious cover limitation", ["impervious_cover"]),
     "IMPERVIOUS_COVER_LIMIT": ("impervious cover limit", ["impervious_cover"]),
     "COMPATIBILITY_STDS": ("compatibility standards height setbacks", ["compatibility", "zoning"]),
     "LDC_REFERENCE": ("land development code", ["zoning"]),
@@ -75,7 +74,6 @@ _CODE_QUERIES: dict[str, tuple[str, list[str]]] = {
 _CITATION_ONLY_CODES = frozenset(
     {
         "ZONING_REGS",
-        "IMPERVIOUS_REGS",
         "COMPATIBILITY_STDS",
     }
 )
@@ -268,6 +266,68 @@ def _baseline_from_state(
     )
 
 
+def _hydrate_regtext(
+    *,
+    jurisdiction_key: str,
+    zoning_code: str,
+    client: httpx.Client,
+    base_url: str,
+    service_key: str | None,
+) -> dict[str, Any] | None:
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if service_key:
+        headers["X-Data-Service-Key"] = service_key
+    url = f"{base_url.rstrip('/')}/v1/regtext/hydrate"
+    resp = client.post(
+        url,
+        json={
+            "jurisdiction_key": jurisdiction_key,
+            "zoning_code": zoning_code,
+            "families": ["impervious"],
+        },
+        headers=headers,
+    )
+    if resp.status_code >= 400:
+        logger.warning("regtext hydrate failed: %s %s", resp.status_code, resp.text[:200])
+        return None
+    data = resp.json()
+    return data if isinstance(data, dict) else None
+
+
+def _hydrate_ic_family(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not payload:
+        return None
+    families = payload.get("families") or {}
+    family = families.get("impervious") if isinstance(families, dict) else None
+    if not isinstance(family, dict):
+        return None
+    status = str(family.get("status") or "")
+    regs = str(family.get("regs_text") or "").strip()
+    if regs and status in {"complete", "partial"}:
+        return family
+    return None
+
+
+def _evidence_from_hydrate(
+    jurisdiction_key: str, family: dict[str, Any]
+) -> list[OrdinanceEvidence]:
+    citation = str(family.get("citation") or family.get("section_id") or "").strip()
+    excerpt = str(family.get("excerpt") or "")
+    if not citation and not excerpt:
+        return []
+    return [
+        OrdinanceEvidence(
+            jurisdiction_key=jurisdiction_key,
+            section_id=str(family.get("section_id") or ""),
+            citation=citation,
+            title=family.get("citation"),
+            deep_link=str(family.get("deep_link") or ""),
+            excerpt=excerpt,
+            retrieved_at=_now_iso(),
+        )
+    ]
+
+
 def _search_regtext(
     *,
     jurisdiction_key: str,
@@ -390,23 +450,25 @@ def _compose_citations(proposed_code: str, hits: list[dict[str, Any]]) -> str:
 
 
 def _dsi_citation_hits(dsi: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """Promote DSI dimensional citation into a search-hit-shaped dict."""
+    """Promote DSI impervious (else dimensional) citation into a search-hit-shaped dict."""
     if not dsi:
         return []
     record = dsi.get("record") or {}
     citations = record.get("citations") or {}
-    dim = citations.get("dimensional") if isinstance(citations, dict) else None
-    if not isinstance(dim, dict):
+    chosen = None
+    if isinstance(citations, dict):
+        chosen = citations.get("impervious") or citations.get("dimensional")
+    if not isinstance(chosen, dict):
         return []
-    citation = str(dim.get("citation") or "").strip()
+    citation = str(chosen.get("citation") or "").strip()
     if not citation:
         return []
     return [
         {
-            "section_id": str(dim.get("section_id") or ""),
+            "section_id": str(chosen.get("section_id") or ""),
             "citation": citation,
-            "title": str(dim.get("title") or citation),
-            "deep_link": str(dim.get("deep_link") or ""),
+            "title": str(chosen.get("title") or citation),
+            "deep_link": str(chosen.get("deep_link") or ""),
             "excerpt": "",
             "retrieved_at": _now_iso(),
         }
@@ -585,16 +647,46 @@ def compute_zoning_scenario(
             else:
                 open_gaps.extend(sorted(_DSI_CODES))
 
+        hydrate_ic: dict[str, Any] | None = None
+        try:
+            hydrate_payload = _hydrate_regtext(
+                jurisdiction_key=jurisdiction_key,
+                zoning_code=proposed_code,
+                client=client,
+                base_url=settings.data_api_base,
+                service_key=settings.data_service_key,
+            )
+            hydrate_ic = _hydrate_ic_family(hydrate_payload)
+        except Exception as exc:  # noqa: BLE001 — surface as corpus gap
+            logger.warning("regtext hydrate failed: %s", exc)
+            hydrate_ic = None
+
         for code in COMPARABLE_CODES:
             evidence: list[OrdinanceEvidence] = []
             if code in _DSI_CODES and code in dsi_texts:
                 text = dsi_texts[code]
                 evidence = list(dsi_evidence)
                 origin = "regtext"
+            elif (
+                code == "IMPERVIOUS_COVER_LIMIT"
+                and hydrate_ic is not None
+                and hydrate_ic.get("limit_pct") is not None
+            ):
+                text = f"{float(hydrate_ic['limit_pct']):g}%"
+                evidence = _evidence_from_hydrate(jurisdiction_key, hydrate_ic)
+                origin = "regtext"
+                if code in open_gaps:
+                    open_gaps.remove(code)
             elif code in _DSI_CODES and code not in dsi_texts:
                 text = ""
                 open_gaps.append(code)
                 origin = "composed"
+            elif code == "IMPERVIOUS_REGS" and hydrate_ic is not None:
+                text = str(hydrate_ic.get("regs_text") or "").strip()
+                evidence = _evidence_from_hydrate(jurisdiction_key, hydrate_ic)
+                origin = "regtext" if text else "composed"
+                if not text:
+                    open_gaps.append(code)
             else:
                 query_base, domains = _CODE_QUERIES[code]
                 query = f"{proposed_code} {query_base}"
@@ -613,14 +705,29 @@ def compute_zoning_scenario(
 
                 if code in _CITATION_ONLY_CODES:
                     relevant = _filter_citation_hits(code, proposed_code, hits)
-                    if not relevant and code == "IMPERVIOUS_REGS":
-                        # Prefer DSI dimensional schedule cite over empty IC regs.
-                        relevant = _dsi_citation_hits(dsi_payload)
                     text = _compose_citations(proposed_code, relevant)
                     evidence = _evidence_from_hits(jurisdiction_key, relevant)
                     if not text:
                         open_gaps.append(code)
                     origin = "regtext" if text else "composed"
+                elif code == "IMPERVIOUS_REGS":
+                    relevant = _filter_citation_hits(code, proposed_code, hits)
+                    if not relevant:
+                        relevant = _dsi_citation_hits(dsi_payload)
+                    if relevant:
+                        hit = relevant[0]
+                        excerpt = str(hit.get("excerpt") or "").strip()
+                        citation = str(hit.get("citation") or "").strip()
+                        if excerpt:
+                            text = f"{citation}: {excerpt}".strip(": ")
+                        else:
+                            text = _compose_citations(proposed_code, relevant)
+                        evidence = _evidence_from_hits(jurisdiction_key, relevant)
+                        origin = "regtext"
+                    else:
+                        text = ""
+                        open_gaps.append(code)
+                        origin = "composed"
                 else:
                     evidence = _evidence_from_hits(jurisdiction_key, hits)
                     if code == "GOVERNING_JURIS":
@@ -665,6 +772,8 @@ def compute_zoning_scenario(
             parsed_ic = _parse_leading_number(dsi_texts["IMPERVIOUS_COVER_LIMIT"])
             if parsed_ic is not None:
                 ic_limit = parsed_ic
+        elif hydrate_ic is not None and hydrate_ic.get("limit_pct") is not None:
+            ic_limit = float(hydrate_ic["limit_pct"])
 
         proposed_bundle = ZoningFactBundle(
             fields=proposed_fields,
