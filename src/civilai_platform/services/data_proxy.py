@@ -13,6 +13,9 @@ _DEFAULT_TIMEOUT_SEC = 30.0
 # Address/parcel site lookups hit live geocoders + CAD ArcGIS; Williams Dr
 # envelope ambiguity routinely exceeds the default 30s proxy budget.
 _DEFAULT_SITE_PASSTHROUGH_TIMEOUT_SEC = 90.0
+# Section facts via Athena (local ``make serve-athena`` or remote lake) often
+# take 15–60s; civil-ai-data polls Athena for up to ~60s before giving up.
+_DEFAULT_SECTION_PASSTHROUGH_TIMEOUT_SEC = 90.0
 _DEFAULT_LLM_INVOKE_TIMEOUT_SEC = 180.0
 _DEFAULT_DRAFT_LLM_INVOKE_TIMEOUT_SEC = 660.0
 
@@ -20,6 +23,7 @@ _SITE_PASSTHROUGH_SUFFIXES = (
     "fe/site/resolve-address",
     "fe/site/by-address",
     "fe/site/by-parcel",
+    "fe/site/by-entity",
 )
 
 
@@ -33,12 +37,24 @@ def _read_timeout_env(name: str, default: float) -> float:
         return default
 
 
+def _is_section_facts_path(data_path: str) -> bool:
+    """True for ``sections/{id}/facts/{entity}`` (and trailing path variants)."""
+    parts = [p for p in data_path.lstrip("/").split("/") if p]
+    return (
+        len(parts) >= 4
+        and parts[0] == "sections"
+        and parts[2] == "facts"
+    )
+
+
 def passthrough_timeout_sec(data_path: str) -> float:
     """Timeout for status-preserving passthrough calls.
 
     FE site address/parcel resolution hits live geocoders + CAD ArcGIS and can
     exceed the default 30s budget (override with
-    CIVILAI_DATA_SITE_PASSTHROUGH_TIMEOUT_SEC). Everything else uses
+    CIVILAI_DATA_SITE_PASSTHROUGH_TIMEOUT_SEC). Section fact lookups against
+    Athena need a similar budget (override with
+    CIVILAI_DATA_SECTION_PASSTHROUGH_TIMEOUT_SEC). Everything else uses
     CIVILAI_DATA_PASSTHROUGH_TIMEOUT_SEC / 30s.
     """
     normalized = data_path.lstrip("/")
@@ -49,6 +65,11 @@ def passthrough_timeout_sec(data_path: str) -> float:
         return _read_timeout_env(
             "CIVILAI_DATA_SITE_PASSTHROUGH_TIMEOUT_SEC",
             _DEFAULT_SITE_PASSTHROUGH_TIMEOUT_SEC,
+        )
+    if _is_section_facts_path(normalized):
+        return _read_timeout_env(
+            "CIVILAI_DATA_SECTION_PASSTHROUGH_TIMEOUT_SEC",
+            _DEFAULT_SECTION_PASSTHROUGH_TIMEOUT_SEC,
         )
     return _read_timeout_env(
         "CIVILAI_DATA_PASSTHROUGH_TIMEOUT_SEC",

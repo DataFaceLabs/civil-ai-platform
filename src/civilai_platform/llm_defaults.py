@@ -100,6 +100,7 @@ def _section_config(step_key: str) -> dict[str, Any]:
                     "Zoning regulations: {{field.ZONING_REGS}}\n"
                     "Platting status: {{field.PLATTING_STATUS}}\n"
                     "Impervious cover: {{field.IMPERVIOUS_REGS}}\n"
+                    "Impervious cover limit: {{field.IMPERVIOUS_COVER_LIMIT}}\n"
                     "Analysis basis: {{field.ZONING_ANALYSIS_BASIS}}\n"
                     "Scenario: {{field.ZONING_SCENARIO_LABEL}}"
                 ),
@@ -107,6 +108,7 @@ def _section_config(step_key: str) -> dict[str, Any]:
                     "ZONING_REGS",
                     "PLATTING_STATUS",
                     "IMPERVIOUS_REGS",
+                    "IMPERVIOUS_COVER_LIMIT",
                     "ZONING_ANALYSIS_BASIS",
                     "ZONING_SCENARIO_LABEL",
                 ],

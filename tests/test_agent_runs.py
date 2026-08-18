@@ -137,6 +137,7 @@ def test_section_draft_resolves_prompt_lab_config_before_agent(client: TestClien
                 "ZONING_REGS": "MF-4 permits multifamily uses.",
                 "PLATTING_STATUS": "Platted",
                 "IMPERVIOUS_REGS": "Maximum 70 percent",
+                "WATER_SERVICE": "Austin Water",
             },
         },
         headers=headers,
@@ -149,6 +150,12 @@ def test_section_draft_resolves_prompt_lab_config_before_agent(client: TestClien
     assert "MF-4 permits multifamily uses." in body["request"]
     assert "Generate the zoning section draft." not in body["request"]
     assert "Review zoning-related field values" in body["message"]
+    field_context = body["trace_summary"]["field_context"]
+    assert field_context["ZONING_REGS"] == "MF-4 permits multifamily uses."
+    assert field_context["PLATTING_STATUS"] == "Platted"
+    assert field_context["IMPERVIOUS_REGS"] == "Maximum 70 percent"
+    assert field_context["PROPERTY_ADDRESS"] == "123 Main St"
+    assert "WATER_SERVICE" not in field_context
     activity = client.get(
         f"/v1/projects/{project_id}/activity",
         headers=headers,

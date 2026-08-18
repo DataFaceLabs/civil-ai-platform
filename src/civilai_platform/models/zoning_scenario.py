@@ -145,6 +145,28 @@ class ZoningChangeScenario(BaseModel):
     computation: ZoningComputationMeta = Field(default_factory=ZoningComputationMeta)
 
 
+class OriginalJurisdictionSnapshotEntry(BaseModel):
+    code: str
+    label: str
+    display: str
+
+
+class OriginalJurisdictionSnapshot(BaseModel):
+    """Immutable CAD jurisdiction/zoning capture written once at project create.
+
+    Survives Accept Zone Change and is the source of truth for Recorded panel
+    display and for reverting project facts back to the recorded jurisdiction.
+    """
+
+    captured_at: str
+    entries: list[OriginalJurisdictionSnapshotEntry] = Field(default_factory=list)
+    zoning_code: str | None = None
+    zoning_text: str | None = None
+    # Full restore maps (optional for older payloads).
+    site_context_values: dict[str, str] | None = None
+    zoning_field_values: dict[str, str] | None = None
+
+
 class ZoningScenarioState(BaseModel):
     """Project-scoped dual-rail zoning scenario state (ADR-0008)."""
 
@@ -154,6 +176,8 @@ class ZoningScenarioState(BaseModel):
     effective_jurisdiction_key: str | None = None
     active_scenario_id: str | None = None
     scenarios: list[ZoningChangeScenario] = Field(default_factory=list)
+    # Write-once CAD original; must round-trip through project state PATCH/GET.
+    original_jurisdiction_snapshot: OriginalJurisdictionSnapshot | None = None
 
     @field_validator("scenarios")
     @classmethod

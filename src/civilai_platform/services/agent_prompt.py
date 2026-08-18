@@ -24,6 +24,17 @@ from civilai_platform.services.search_policy import (
 
 _FIELD_TOKEN = re.compile(r"\{\{field\.([A-Z0-9_]+)\}\}")
 
+# Legacy Prompt Lab tokens from the TCAD_* → CAD_* rename.
+_LEGACY_FIELD_CODE_ALIASES: dict[str, str] = {
+    "TCAD_INFO": "CAD_INFO",
+    "TCAD_DISCREPANCIES": "CAD_DISCREPANCIES",
+    "TCAD_VALUATION": "CAD_VALUATION",
+    "TCAD_LEGAL_DESCRIPTION": "CAD_LEGAL_DESCRIPTION",
+    "TCAD_LAND_USE": "CAD_LAND_USE",
+    "TCAD_YEAR_BUILT": "CAD_YEAR_BUILT",
+    "TCAD_DEED_REFERENCE": "CAD_DEED_REFERENCE",
+}
+
 
 @dataclass(frozen=True)
 class ResolvedSectionAgentPrompt:
@@ -36,6 +47,7 @@ class ResolvedSectionAgentPrompt:
     prompt_template: str
     rendered_prompt: str
     input_field_codes: tuple[str, ...]
+    field_context: dict[str, str]
     model_preset: str
     model_id: str
     temperature: float
@@ -50,15 +62,90 @@ def _nonempty(value: object) -> str:
     return str(value or "").strip()
 
 
-def _remove_missing_token_line(prompt: str, code: str) -> str:
-    """Mirror FE Prompt Lab behavior: omit a whole line when its field is empty."""
-    token = "{{field." + code + "}}"
-    kept = [line for line in prompt.splitlines() if token not in line]
+def _sanitized_field(field_context: dict[str, str], code: str) -> str:
+    direct = sanitize_field_value_for_draft(_nonempty(field_context.get(code)))
+    if direct:
+        return direct
+    canonical = _LEGACY_FIELD_CODE_ALIASES.get(code)
+    if not canonical or canonical == code:
+        return ""
+    return sanitize_field_value_for_draft(_nonempty(field_context.get(canonical)))
+
+
+def _omit_empty_field_token_lines(template: str, field_context: dict[str, str]) -> str:
+    """Drop lines whose field tokens are all empty; keep mixed-token lines.
+
+    One missing sibling token (for example a stale TCAD_* code) must not wipe
+    filled neighbors on the same Prompt Lab line.
+    """
+    kept: list[str] = []
+    for line in template.splitlines():
+        codes = _FIELD_TOKEN.findall(line)
+        if not codes or any(_sanitized_field(field_context, code) for code in codes):
+            kept.append(line)
     return "\n".join(kept)
 
 
-def _sanitized_field(field_context: dict[str, str], code: str) -> str:
-    return sanitize_field_value_for_draft(_nonempty(field_context.get(code)))
+def _field_codes_in_text(*templates: str) -> set[str]:
+    codes: set[str] = set()
+    for template in templates:
+        codes.update(_FIELD_TOKEN.findall(template or ""))
+    return codes
+
+
+_ALWAYS_KEEP_FIELD_CODES = frozenset({"PROPERTY_ADDRESS", "AVAILABLE_EXHIBITS"})
+
+# Dimensional / DSI zoning codes belong on the Zoning section even if Parcel
+# Prompt Lab selected them as inputFieldCodes or template tokens.
+_ZONING_DSI_FIELD_CODES = frozenset(
+    {
+        "ZONING_REGS",
+        "ZONING_DISTRICT",
+        "MIN_LOT_SIZE",
+        "MIN_LOT_WIDTH",
+        "SETBACKS",
+        "MAX_BUILDING_COVERAGE",
+        "MAX_BUILDING_HEIGHT",
+        "IMPERVIOUS_COVER_LIMIT",
+        "IMPERVIOUS_REGS",
+        "EASEMENTS_SETBACKS",
+        "COMPATIBILITY_STDS",
+        "ZONING_ANALYSIS_BASIS",
+        "ZONING_SCENARIO_LABEL",
+    }
+)
+_ZONING_SECTION_IDS = frozenset({"zoning"})
+
+
+def section_draft_field_context(
+    field_context: dict[str, str],
+    *,
+    input_field_codes: list[str] | tuple[str, ...],
+    template: str,
+    search_context_hint: str = "",
+    section_id: str = "",
+) -> dict[str, str]:
+    """Restrict section-draft context to Prompt Lab inputs and template tokens.
+
+    Always retains PROPERTY_ADDRESS and AVAILABLE_EXHIBITS when present so
+    canonical address and exhibit citation policy still work. DSI dimensionals
+    are dropped unless the active section is zoning.
+    """
+    allow = {
+        str(code).strip()
+        for code in input_field_codes
+        if str(code).strip()
+    }
+    allow |= _field_codes_in_text(template, search_context_hint)
+    allow |= _ALWAYS_KEEP_FIELD_CODES
+    if str(section_id).strip() not in _ZONING_SECTION_IDS:
+        allow -= _ZONING_DSI_FIELD_CODES
+    scoped: dict[str, str] = {}
+    for code in sorted(allow):
+        value = _sanitized_field(field_context, code)
+        if value:
+            scoped[code] = value
+    return scoped
 
 
 def compose_section_template(
@@ -71,29 +158,17 @@ def compose_section_template(
 
     Field values are scrubbed of robotic Compose stems before substitution so the
     model is not asked to echo "rule extraction pending" into section.body.
+
+    ``input_field_codes`` is applied upstream via ``section_draft_field_context``;
+    line omission here is driven by tokens present in ``template``.
     """
-    codes = list(dict.fromkeys([*input_field_codes, *_FIELD_TOKEN.findall(template)]))
-    prompt = template
-    for code in codes:
-        if not _sanitized_field(field_context, code):
-            prompt = _remove_missing_token_line(prompt, code)
+    _ = input_field_codes
+    prompt = _omit_empty_field_token_lines(template, field_context)
     prompt = _FIELD_TOKEN.sub(
         lambda match: _sanitized_field(field_context, match.group(1)),
         prompt,
     )
     return re.sub(r"\n{3,}", "\n\n", prompt).strip()
-
-
-def _field_context_block(field_context: dict[str, str]) -> str:
-    return "\n".join(
-        f"{code}: {value}"
-        for code, value in sorted(
-            (code, sanitize_field_value_for_draft(raw.strip()))
-            for code, raw in field_context.items()
-            if raw.strip()
-        )
-        if value
-    )
 
 
 def _render_user_prompt(
@@ -103,7 +178,6 @@ def _render_user_prompt(
     user_guidance: str,
     thread_memory: str,
     section_body_plain: str,
-    field_context: dict[str, str],
     fields_unchanged: bool,
 ) -> str:
     if mode == "generate":
@@ -124,10 +198,6 @@ def _render_user_prompt(
         parts.append(f"Current draft:\n{section_body_plain.strip()}")
     if fields_unchanged:
         parts.append("Governed field values are unchanged since the last turn.")
-    else:
-        block = _field_context_block(field_context)
-        if block:
-            parts.append(f"Governed fields:\n{block}")
     parts.append(f"Analyst request:\n{user_guidance or 'Refine the current draft.'}")
     return "\n\n".join(parts)
 
@@ -157,9 +227,17 @@ def resolve_section_agent_prompt(
         if isinstance(raw_codes, list)
         else ()
     )
+    raw_hint = _nonempty(section.get("searchContextHint"))
+    scoped_field_context = section_draft_field_context(
+        field_context,
+        input_field_codes=input_codes,
+        template=template,
+        search_context_hint=raw_hint,
+        section_id=section_id,
+    )
     rendered_template = compose_section_template(
         template,
-        field_context=field_context,
+        field_context=scoped_field_context,
         input_field_codes=input_codes,
     )
     rendered_prompt = _render_user_prompt(
@@ -168,10 +246,9 @@ def resolve_section_agent_prompt(
         user_guidance=user_guidance.strip(),
         thread_memory=thread_memory,
         section_body_plain=section_body_plain,
-        field_context=field_context,
         fields_unchanged=fields_unchanged,
     )
-    has_exhibits = bool(_sanitized_field(field_context, "AVAILABLE_EXHIBITS"))
+    has_exhibits = bool(_sanitized_field(scoped_field_context, "AVAILABLE_EXHIBITS"))
     reminder = draft_voice_user_reminder(has_exhibits=has_exhibits)
     rendered_prompt = f"{rendered_prompt}\n\n{reminder}".strip() if rendered_prompt else reminder
 
@@ -192,14 +269,16 @@ def resolve_section_agent_prompt(
         if isinstance(section_web_enabled, bool)
         else bool(web.get("enabled", False))
     )
-    raw_hint = _nonempty(section.get("searchContextHint"))
     hint = substitute_search_hint_tokens(
         raw_hint,
         active_section_id=section_id,
-        field_context=field_context,
+        field_context=scoped_field_context,
     )
     # Prompt Lab stores {{field.CODE}} tokens; support them in search hints too.
-    hint = _FIELD_TOKEN.sub(lambda match: _nonempty(field_context.get(match.group(1))), hint)
+    hint = _FIELD_TOKEN.sub(
+        lambda match: _nonempty(scoped_field_context.get(match.group(1))),
+        hint,
+    )
     search_policy = {
         "enabled": configured_enabled and web_search_provider_configured(),
         "search_context_hint": hint,
@@ -221,6 +300,7 @@ def resolve_section_agent_prompt(
         prompt_template=template,
         rendered_prompt=rendered_prompt,
         input_field_codes=input_codes,
+        field_context=scoped_field_context,
         model_preset=model_preset,
         model_id=resolve_model_id(model_preset),
         temperature=temperature,

@@ -102,6 +102,29 @@ def test_compute_fills_proposed_and_comparisons() -> None:
             }
             resp.raise_for_status = MagicMock()
             return resp
+        if url.endswith("/hydrate"):
+            resp.json.return_value = {
+                "jurisdiction_key": "coa_full",
+                "zoning_code": "MF-4",
+                "corpus_status": "ready",
+                "families": {
+                    "impervious": {
+                        "family": "impervious",
+                        "status": "complete",
+                        "limit_pct": 80,
+                        "table_id": "Table 25-8-63",
+                        "regs_text": (
+                            "MF-4: 80% maximum impervious cover (Table 25-8-63). "
+                            "LDC §25-8-63."
+                        ),
+                        "excerpt": "Maximum impervious cover shall not exceed 80 percent.",
+                        "citation": "LDC §25-8-63",
+                        "section_id": "25-8-63",
+                    }
+                },
+            }
+            resp.raise_for_status = MagicMock()
+            return resp
         resp.json.return_value = hits
         resp.raise_for_status = MagicMock()
         return resp
@@ -171,9 +194,10 @@ def test_compute_fills_proposed_and_comparisons() -> None:
     assert sc.status == "computed"
     assert sc.proposed.fields["ZONING_REGS"].value == "MF-4 — LDC §25-2-492"
     assert "allows multifamily" not in sc.proposed.fields["ZONING_REGS"].value
-    # Search returns the MF-4 district title for every query in this mock; IC filter
-    # accepts the district article, and compatibility requires "compatibilit*" — empty.
-    assert "LDC §25-2-492" in sc.proposed.fields["IMPERVIOUS_REGS"].value
+    assert "Table 25-8-63" in sc.proposed.fields["IMPERVIOUS_REGS"].value
+    assert "80 percent" in sc.proposed.fields["IMPERVIOUS_REGS"].value or "80%" in (
+        sc.proposed.fields["IMPERVIOUS_REGS"].value
+    )
     assert sc.proposed.fields["COMPATIBILITY_STDS"].value == ""
     assert sc.proposed.fields["MAX_BUILDING_HEIGHT"].value == "60 ft"
     assert sc.input_fingerprint is not None
@@ -189,6 +213,21 @@ def test_compute_empty_when_search_returns_nothing() -> None:
         resp.status_code = 200
         if url.endswith("/ensure"):
             resp.json.return_value = {"status": "ready", "corpus_version": "x"}
+            resp.raise_for_status = MagicMock()
+            return resp
+        if url.endswith("/hydrate"):
+            resp.json.return_value = {
+                "jurisdiction_key": "coa_full",
+                "zoning_code": "MF-4",
+                "corpus_status": "ready",
+                "families": {
+                    "impervious": {
+                        "family": "impervious",
+                        "status": "unavailable",
+                        "regs_text": "",
+                    }
+                },
+            }
             resp.raise_for_status = MagicMock()
             return resp
         resp.json.return_value = []
