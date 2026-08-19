@@ -174,6 +174,7 @@ def _evidence_from_dsi(jurisdiction_key: str, dsi: dict[str, Any]) -> list[Ordin
     now = _now_iso()
     record = dsi.get("record") or {}
     citations = record.get("citations") or {}
+    pack_url = str(dsi.get("citation_url") or "").strip()
     out: list[OrdinanceEvidence] = []
     if isinstance(citations, dict):
         for cite in citations.values():
@@ -185,11 +186,23 @@ def _evidence_from_dsi(jurisdiction_key: str, dsi: dict[str, Any]) -> list[Ordin
                     section_id=str(cite.get("section_id") or ""),
                     citation=str(cite.get("citation") or ""),
                     title=cite.get("title"),
-                    deep_link=str(cite.get("deep_link") or ""),
+                    deep_link=str(cite.get("deep_link") or pack_url or ""),
                     excerpt="",
                     retrieved_at=now,
                 )
             )
+    if not out and pack_url:
+        out.append(
+            OrdinanceEvidence(
+                jurisdiction_key=jurisdiction_key,
+                section_id="",
+                citation="",
+                title=None,
+                deep_link=pack_url,
+                excerpt="",
+                retrieved_at=now,
+            )
+        )
     return out
 
 
