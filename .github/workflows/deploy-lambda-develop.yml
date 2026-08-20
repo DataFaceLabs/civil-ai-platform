@@ -1,0 +1,100 @@
+# Deploy platform Lambda CODE when develop changes the package.
+#
+# Why: Amplify develop auto-builds FE on push; the platform API did not. Merges
+# that only touched civil-ai-platform left develop FE talking to a stale
+# civilai-uat-api until someone remembered scripts/deploy-lambda.sh
+# (2026-08-20: FE tip had yesterday's UI while Lambda was still Aug 18).
+#
+# Scope: shared UAT Lambda (civilai-uat-api). There is no separate develop
+# backend yet (AGENTS.md / RELEASE-MIGRATION-PLAN Phase 6) — this is the same
+# function Amplify develop and www.civil1.ai call today. Treat path-filtered
+# develops as customer-facing deploys.
+#
+# Bootstrap (once): tofu apply the ci_oidc_lambda_deploy role in
+# infra/opentofu/environments/uat, then set repo variable
+# AWS_LAMBDA_DEPLOY_ROLE_ARN if the default ARN below is wrong.
+name: deploy-lambda-develop
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "src/civilai_platform/**"
+      - "assets/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "scripts/package-lambda.sh"
+      - "scripts/deploy-lambda.sh"
+      - ".github/workflows/deploy-lambda-develop.yml"
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-lambda-develop
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: package + deploy civilai-uat-api
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: civil-ai-platform
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: civil-ai-platform
+
+      # package-lambda.sh vendors ../civil-ai-agent (editable dep). Same secret
+      # pattern as ci.yml gauntlet — without it the zip would miss agent code.
+      - name: Check for cross-repo checkout token
+        id: agent_token
+        working-directory: .
+        env:
+          CROSS_REPO_CHECKOUT_TOKEN: ${{ secrets.CROSS_REPO_CHECKOUT_TOKEN }}
+        run: |
+          if [[ -z "${CROSS_REPO_CHECKOUT_TOKEN}" ]]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::error title=Missing CROSS_REPO_CHECKOUT_TOKEN::Lambda package requires DataFaceLabs/civil-ai-agent as a sibling. Add a fine-grained PAT with contents:read as CROSS_REPO_CHECKOUT_TOKEN."
+            exit 1
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: DataFaceLabs/civil-ai-agent
+          token: ${{ secrets.CROSS_REPO_CHECKOUT_TOKEN }}
+          ref: develop
+          path: civil-ai-agent
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Assume Lambda deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_LAMBDA_DEPLOY_ROLE_ARN || 'arn:aws:iam::379604374458:role/uat-civilai-ci-lambda-deploy' }}
+          aws-region: us-east-1
+          role-session-name: lambda-deploy-develop
+
+      - name: Deploy Lambda
+        env:
+          LAMBDA_DEPLOY_S3_BUCKET: ${{ vars.AWS_LAMBDA_DEPLOY_S3_BUCKET || 'civilai-app-uat' }}
+          LAMBDA_DEPLOY_S3_PREFIX: ${{ vars.AWS_LAMBDA_DEPLOY_S3_PREFIX || 'ci/platform-lambda/' }}
+        run: ./scripts/deploy-lambda.sh civilai-uat-api
+
+      - name: Record deployed SHA
+        run: |
+          echo "Deployed $(git rev-parse HEAD) to civilai-uat-api"
+          aws lambda get-function-configuration \
+            --function-name civilai-uat-api \
+            --query '{LastModified:LastModified,CodeSize:CodeSize}' \
+            --output json

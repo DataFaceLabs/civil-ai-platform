@@ -22,10 +22,12 @@ Since the 2026-07-18 release migration, this is not just a git convention — `m
 Basic Auth-gated continuous test space
 (`https://develop.d3joxyeudajkza.amplifyapp.com`). See `RELEASE-MIGRATION-PLAN.md` in the
 Project-Landmark workspace root for the full mechanics and current phase status. One
-caveat specific to this repo: the platform Lambda and EC2 data API have no separate dev
-environment yet (that runbook's Phase 6) — `civil-ai/scripts/deploy-uat.sh`'s
-`platform`/`data-api` targets deploy straight to the shared, customer-facing backend
-regardless of git branch. Treat any backend deploy as production.
+caveat specific to this repo: the platform Lambda and EC2 data API have no separate develop
+environment yet (that runbook's Phase 6) — deploys hit the shared UAT backend
+(`civilai-uat-api`) that Amplify develop and www.civil1.ai both call. Treat any backend
+deploy as customer-facing. Platform Lambda **code** on `develop` is auto-deployed by
+`.github/workflows/deploy-lambda-develop.yml` when package paths change (OIDC role in
+`infra/opentofu/environments/uat/ci_oidc_lambda_deploy.tf`); infra still needs `tofu apply`.
 
 ## Canonical References
 
