@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import RedirectResponse
 
 from civilai_platform.api.deps import get_store_dep, tenant_ctx
 from civilai_platform.auth.actor import tenant_actor_user_id
@@ -336,6 +337,12 @@ def download_artifact(
     ctx: Annotated[AuthContext, Depends(_member_ctx)],
     store: Annotated[PlatformStore, Depends(get_store_dep)],
 ) -> Response:
+    """Serve an artifact.
+
+    S3-backed deploys redirect to a short-lived presigned URL so the file never
+    traverses Lambda (sync responses are capped at 6MB; exhibits routinely exceed that).
+    Memory backend still streams bytes for local tests.
+    """
     assert ctx.tenant_id
     if not store.get_project(ctx.tenant_id, project_id):
         raise HTTPException(404, "Project not found")
@@ -343,6 +350,16 @@ def download_artifact(
         artifact_svc.assert_project_artifact_key(ctx.tenant_id, project_id, key)
     except ValueError as exc:
         raise HTTPException(403, str(exc)) from exc
+
+    from civilai_platform.settings import get_settings
+
+    settings = get_settings()
+    if settings.artifact_backend == "s3" and settings.app_bucket:
+        return RedirectResponse(
+            url=artifact_svc.presign_download(key=key).download_url,
+            status_code=307,
+        )
+
     data = artifact_svc.download_artifact_bytes(key)
     if not data:
         raise HTTPException(404, "Artifact not found")
