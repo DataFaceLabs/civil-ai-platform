@@ -291,6 +291,7 @@ class ProjectUpdate(BaseModel):
     jurisdiction: str | None = None
     client_id: str | None = None
     owner_user_id: str | None = None
+    parcel_image_url: str | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -302,6 +303,7 @@ class ProjectResponse(BaseModel):
     owner_user_id: str
     client_id: str | None
     status: str
+    parcel_image_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
