@@ -249,6 +249,8 @@ def patch_project_state(
         msg = str(exc)
         if "not found" in msg.lower():
             raise HTTPException(404, msg) from exc
+        if "maximum allowed size" in msg.lower() or "400 kb" in msg.lower():
+            raise HTTPException(413, msg) from exc
         raise HTTPException(400, msg) from exc
 
 

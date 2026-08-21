@@ -5,6 +5,7 @@ import uuid
 from functools import lru_cache
 
 import boto3
+from botocore.exceptions import ClientError
 
 from civilai_platform.models.api import (
     ArtifactDownloadUrlResponse,
@@ -187,6 +188,12 @@ def download_artifact_bytes(key: str) -> bytes | None:
     if settings.artifact_backend == "memory":
         return get_memory_artifact(key)
     if settings.artifact_backend == "s3" and settings.app_bucket:
-        obj = _s3_client().get_object(Bucket=settings.app_bucket, Key=key)
+        try:
+            obj = _s3_client().get_object(Bucket=settings.app_bucket, Key=key)
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise
         return obj["Body"].read()
     return None
