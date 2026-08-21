@@ -31,6 +31,37 @@ WORKFLOW_STEPS = [
     ("draft", "Draft"),
 ]
 
+# Keep list thumbnails on the Project item small (DynamoDB project payload).
+_MAX_PARCEL_IMAGE_URL_LEN = 4096
+
+
+def _parcel_image_url_from_state(state: ProjectState) -> str | None:
+    """Extract a list-safe parcel map URL from project state, if present."""
+    parcel = state.parcel if isinstance(state.parcel, dict) else None
+    if not parcel:
+        return None
+    raw = parcel.get("mapboxImageUrl") or parcel.get("mapbox_image_url")
+    if raw is None:
+        return None
+    url = str(raw).strip()
+    if not url or url == "civilai:parcel-map-unavailable":
+        return None
+    if len(url) > _MAX_PARCEL_IMAGE_URL_LEN:
+        return None
+    return url
+
+
+def _sync_project_meta_from_state(store: PlatformStore, project: Project, state: ProjectState) -> None:
+    """Denormalize list fields (e.g. parcel thumbnail) onto the Project record."""
+    updates: dict[str, object] = {"updated_at": utc_now()}
+    image_url = _parcel_image_url_from_state(state)
+    if image_url is not None and image_url != project.parcel_image_url:
+        updates["parcel_image_url"] = image_url
+    elif image_url is None and project.parcel_image_url is not None and state.parcel is not None:
+        # Parcel present but no usable image — clear stale thumbnail.
+        updates["parcel_image_url"] = None
+    store.put_project(project.model_copy(update=updates))
+
 
 def _default_sections() -> list[Section]:
     return [
@@ -243,7 +274,7 @@ def patch_project_state(
     )
     project = store.get_project(tenant_id, project_id)
     if project:
-        store.put_project(project.model_copy(update={"updated_at": utc_now()}))
+        _sync_project_meta_from_state(store, project, updated)
     record_audit(
         tenant_id=tenant_id,
         actor_user_id=actor_user_id,
