@@ -16,6 +16,7 @@ from civilai_platform.models.entities import (
 from civilai_platform.services import agent_corpus
 from civilai_platform.services.audit import record_audit
 from civilai_platform.services.client import sync_client_fields_to_sections
+from civilai_platform.services.feasibility_fingerprint import compact_feasibility_fingerprint
 from civilai_platform.services.project_activity import record_project_activity
 from civilai_platform.store.base import PlatformStore
 
@@ -180,6 +181,31 @@ def _entity_id_from_state(state: ProjectState) -> str | None:
     return None
 
 
+def _compact_state_for_storage(state: ProjectState) -> ProjectState:
+    """Shrink known oversized fields before DynamoDB PutItem (400 KB cap)."""
+    updates: dict[str, object] = {}
+    doc = state.feasibility_document
+    if doc is not None:
+        compacted = compact_feasibility_fingerprint(doc.source_fingerprint)
+        if compacted is not None and compacted != doc.source_fingerprint:
+            updates["feasibility_document"] = doc.model_copy(
+                update={"source_fingerprint": compacted}
+            )
+    if state.map_exhibits:
+        # Base64 thumbnails must not live on project state (FE already omits them).
+        stripped = [
+            exhibit.model_copy(update={"thumbnail_data_url": None})
+            if exhibit.thumbnail_data_url
+            else exhibit
+            for exhibit in state.map_exhibits
+        ]
+        if any(a.thumbnail_data_url for a in state.map_exhibits):
+            updates["map_exhibits"] = stripped
+    if not updates:
+        return state
+    return state.model_copy(update=updates)
+
+
 def patch_project_state(
     store: PlatformStore,
     *,
@@ -201,6 +227,7 @@ def patch_project_state(
         if isinstance(exc, ValidationError):
             raise ValueError(str(exc)) from exc
         raise
+    updated = _compact_state_for_storage(updated)
     store.put_project_state(updated)
     # Best-effort capture of every section milestone (edit/approve/reopen). Diffs the
     # pre-save sections against the saved ones; never blocks the save. entity_id is
