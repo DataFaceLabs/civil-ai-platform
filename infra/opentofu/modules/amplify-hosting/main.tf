@@ -28,6 +28,12 @@ variable "platform_api_base" {
   type = string
 }
 
+variable "develop_platform_api_base" {
+  type        = string
+  default     = ""
+  description = "TPO develop-plane HTTP API. When set, the team Amplify branch bakes this as VITE_CIVILAI_PLATFORM_API. Empty leaves the branch inheriting app-level platform_api_base."
+}
+
 variable "cognito_user_pool_id" {
   type = string
 }
@@ -250,9 +256,12 @@ resource "aws_amplify_branch" "main" {
   # listed here gets dropped on the next apply -- which is exactly what was about
   # to happen to the session idle timeout below (set directly on the branch, never
   # recorded here). Found 2026-08-02 by the H0-IACDRIFT check.
-  environment_variables = {
-    VITE_CIVILAI_SESSION_IDLE_MS = var.session_idle_ms
-  }
+  environment_variables = merge(
+    { VITE_CIVILAI_SESSION_IDLE_MS = var.session_idle_ms },
+    var.develop_platform_api_base != "" ? {
+      VITE_CIVILAI_PLATFORM_API = var.develop_platform_api_base
+    } : {},
+  )
 
   lifecycle {
     # Provider quirk: the Amplify API never echoes basic_auth_credentials back in a
@@ -283,6 +292,7 @@ resource "aws_amplify_branch" "production" {
   # Vite bakes VITE_* at build time — after changing this, rebuild the production branch.
   environment_variables = {
     VITE_CIVILAI_SESSION_IDLE_MS = var.production_session_idle_ms
+    VITE_CIVILAI_PLATFORM_API    = var.platform_api_base
   }
 }
 

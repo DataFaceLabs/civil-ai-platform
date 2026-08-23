@@ -82,6 +82,14 @@ module "dynamodb" {
   environment = var.environment
 }
 
+# Isolated TPO develop-plane table. Name is civilai-app-develop, not civilai-app-dev
+# (that table is the laptop ensure_dev_persistence default and is dirty).
+module "dynamodb_develop" {
+  count       = var.create_develop_plane && var.create_platform_persistence ? 1 : 0
+  source      = "../../modules/dynamodb"
+  environment = "develop"
+}
+
 module "s3_app" {
   count        = var.create_platform_persistence ? 1 : 0
   source       = "../../modules/s3"
@@ -129,12 +137,49 @@ module "api_gateway" {
   cognito_trust_client_id    = var.cognito_trust_client_id
   bedrock_policy_arn         = module.bedrock[0].invoke_policy_arn
   dynamodb_table_arn         = module.dynamodb[0].table_arn
+  dynamodb_table_name        = module.dynamodb[0].table_name
+  denied_dynamodb_table_arns = (
+    var.create_develop_plane && var.create_platform_persistence
+    ? [module.dynamodb_develop[0].table_arn]
+    : []
+  )
   app_bucket_arn             = data.aws_s3_bucket.data_lake.arn
   agent_corpus_bucket        = module.s3_agent_corpus[0].bucket_name
   agent_corpus_bucket_arn    = module.s3_agent_corpus[0].bucket_arn
   data_api_base_url          = module.data_api_ec2.data_api_base_url_http
   dev_data_api_base_url      = module.data_api_ec2.dev_data_api_base_url_http
   dev_data_origins           = var.dev_data_origins
+  data_service_key_parameter = module.secrets.data_service_key_parameter_name
+  data_service_key           = module.secrets.data_service_key
+  tavily_api_key             = module.secrets.tavily_api_key
+  create_http_api            = true
+  lambda_package_path        = var.lambda_package_path
+  dev_auth                   = var.dev_auth
+}
+
+# Second HTTP API + Lambda (civilai-develop-api). Same Cognito pool. Data API is
+# always :8001 on this function (empty Origin split). Do not apply until plan review.
+module "api_gateway_develop" {
+  count  = var.create_develop_plane && var.create_platform_http_api && var.create_platform_persistence ? 1 : 0
+  source = "../../modules/api-gateway"
+
+  environment                = "develop"
+  aws_region                 = var.aws_region
+  cognito_user_pool_arn      = module.cognito[0].user_pool_arn
+  cognito_user_pool_id       = module.cognito[0].user_pool_id
+  cognito_client_id          = module.cognito[0].app_client_id
+  cognito_trust_client_id    = var.cognito_trust_client_id
+  bedrock_policy_arn         = module.bedrock[0].invoke_policy_arn
+  dynamodb_table_arn         = module.dynamodb_develop[0].table_arn
+  dynamodb_table_name        = module.dynamodb_develop[0].table_name
+  denied_dynamodb_table_arns = [module.dynamodb[0].table_arn]
+  ssm_parameter_path_prefix  = "/civilai/uat"
+  app_bucket_arn             = data.aws_s3_bucket.data_lake.arn
+  agent_corpus_bucket        = module.s3_agent_corpus[0].bucket_name
+  agent_corpus_bucket_arn    = module.s3_agent_corpus[0].bucket_arn
+  data_api_base_url          = module.data_api_ec2.dev_data_api_base_url_http
+  dev_data_api_base_url      = ""
+  dev_data_origins           = []
   data_service_key_parameter = module.secrets.data_service_key_parameter_name
   data_service_key           = module.secrets.data_service_key
   tavily_api_key             = module.secrets.tavily_api_key
@@ -163,6 +208,26 @@ module "agentcore" {
   data_api_base_url = module.data_api_ec2.data_api_base_url_http
 }
 
+module "agentcore_develop" {
+  count  = var.create_develop_plane && var.create_platform_http_api && var.create_platform_persistence ? 1 : 0
+  source = "../../modules/agentcore"
+
+  environment       = "develop"
+  aws_region        = var.aws_region
+  lambda_role_arn   = module.api_gateway_develop[0].lambda_role_arn
+  app_bucket_arn    = data.aws_s3_bucket.data_lake.arn
+  data_api_base_url = module.data_api_ec2.dev_data_api_base_url_http
+}
+
+module "observability_develop" {
+  count  = var.create_develop_plane && var.create_platform_http_api && var.create_platform_persistence ? 1 : 0
+  source = "../../modules/observability"
+
+  environment              = "develop"
+  lambda_function_name     = module.api_gateway_develop[0].lambda_function_name
+  alarm_notification_email = var.alarm_notification_email
+}
+
 module "amplify" {
   count  = var.create_amplify_app ? 1 : 0
   source = "../../modules/amplify-hosting"
@@ -174,6 +239,11 @@ module "amplify" {
   production_branch_name      = var.fe_production_branch_name
   develop_basic_auth_password = module.secrets.develop_basic_auth_password
   platform_api_base           = var.create_platform_http_api ? module.api_gateway[0].api_endpoint : "http://localhost:8001"
+  develop_platform_api_base   = (
+    var.create_develop_plane && var.create_platform_http_api && var.create_platform_persistence
+    ? module.api_gateway_develop[0].api_endpoint
+    : ""
+  )
   cognito_user_pool_id        = var.create_platform_persistence ? module.cognito[0].user_pool_id : ""
   cognito_client_id           = var.create_platform_persistence ? module.cognito[0].app_client_id : ""
   cognito_hosted_ui_base      = var.create_platform_persistence ? module.cognito[0].hosted_ui_base_url : ""
