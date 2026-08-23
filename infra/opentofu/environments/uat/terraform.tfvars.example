@@ -67,6 +67,10 @@ fe_production_branch_name = "main"
 # TPO two-plane (off until plan is reviewed). Creates civilai-develop-api,
 # civilai-app-develop, and points Amplify develop at the new API. Never apply
 # infra/opentofu/environments/dev for this.
+# After apply: tofu output ci_refresh_develop_role_arn → GitHub var
+# AWS_REFRESH_DEVELOP_ROLE_ARN. Deploy-production OIDC
+# (ci_deploy_production_role_arn) is created whenever HTTP API + persistence
+# exist; set AWS_DEPLOY_PRODUCTION_ROLE_ARN on the civil-ai repo.
 # create_develop_plane = true
 
 # Run ../../scripts/package-lambda.sh before apply when create_platform_http_api=true.
