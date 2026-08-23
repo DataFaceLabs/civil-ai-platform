@@ -36,11 +36,14 @@ cors_origins = [
 ]
 
 # Add Amplify default domain after first apply, e.g. https://develop.d1234.amplifyapp.com/fstudio/*/login/callback
+# Include the gated Amplify develop origin (R1.6). Live app id d3joxyeudajkza.
 cognito_callback_urls = [
   "http://localhost:5173/fstudio/*/login/callback",
+  "https://develop.d3joxyeudajkza.amplifyapp.com/fstudio/*/login/callback",
 ]
 cognito_logout_urls = [
   "http://localhost:5173/fstudio/*/login",
+  "https://develop.d3joxyeudajkza.amplifyapp.com/fstudio/*/login",
 ]
 
 # GitHub PAT (repo scope) for Amplify + optional EC2 clone
