@@ -1,8 +1,11 @@
 """Select the governed-data plane for a browser request.
 
-The UAT API is shared by the production and develop frontends. Production is
-the fail-closed default; only an exact, configured browser Origin may select
-the slower dev data plane.
+On the customer Lambda, production is the fail-closed default; only an exact
+configured Origin may select ``CIVILAI_DEV_DATA_API_BASE`` (typically ``:8001``).
+
+The TPO develop Lambda does not use that Origin split: tofu sets
+``CIVILAI_DATA_API_BASE`` to ``:8001`` and leaves the dev Origin list empty, so
+this helper always returns the primary base.
 """
 
 from __future__ import annotations
@@ -17,7 +20,14 @@ def _csv_env(name: str) -> set[str]:
 
 
 def data_api_base_for_origin(origin: str | None) -> str:
-    """Return dev base for an allowlisted Origin; otherwise return prod."""
+    """Return the allowlisted dev data-API base, else the primary base.
+
+    Args:
+        origin: Browser ``Origin`` header, or ``None`` if absent.
+
+    Returns:
+        Trimmed data-API root URL with no trailing slash.
+    """
     prod_base = os.getenv("CIVILAI_DATA_API_BASE", "http://localhost:8000").rstrip("/")
     dev_base = os.getenv("CIVILAI_DEV_DATA_API_BASE", "").strip().rstrip("/")
     normalized_origin = (origin or "").strip().rstrip("/")
