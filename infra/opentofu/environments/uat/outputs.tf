@@ -14,6 +14,18 @@ output "platform_api_endpoint" {
   value = var.create_platform_http_api ? module.api_gateway[0].api_endpoint : null
 }
 
+output "develop_platform_api_endpoint" {
+  value = var.create_develop_plane && var.create_platform_http_api && var.create_platform_persistence ? module.api_gateway_develop[0].api_endpoint : null
+}
+
+output "develop_lambda_function_name" {
+  value = var.create_develop_plane && var.create_platform_http_api && var.create_platform_persistence ? module.api_gateway_develop[0].lambda_function_name : null
+}
+
+output "develop_dynamodb_table" {
+  value = var.create_develop_plane && var.create_platform_persistence ? module.dynamodb_develop[0].table_name : null
+}
+
 output "cognito_user_pool_id" {
   value = var.create_platform_persistence ? module.cognito[0].user_pool_id : null
 }

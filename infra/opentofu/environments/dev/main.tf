@@ -1,3 +1,6 @@
+# TPO two-plane (R1.8): do not apply this stub. It creates a second Cognito pool
+# and leaves create_http_api false. The develop plane is extra resources in the
+# UAT root (`create_develop_plane`) sharing civilai-uat Cognito.
 terraform {
   required_version = ">= 1.6.0"
 }

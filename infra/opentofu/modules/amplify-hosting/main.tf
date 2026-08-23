@@ -28,6 +28,12 @@ variable "platform_api_base" {
   type = string
 }
 
+variable "develop_platform_api_base" {
+  type        = string
+  default     = ""
+  description = "TPO develop-plane HTTP API. When set, the team Amplify branch bakes this as VITE_CIVILAI_PLATFORM_API. Empty leaves the branch inheriting app-level platform_api_base."
+}
+
 variable "cognito_user_pool_id" {
   type = string
 }
@@ -210,11 +216,20 @@ resource "aws_amplify_app" "fe" {
 
 variable "session_idle_ms" {
   type        = string
-  default     = "600000"
+  default     = "1800000"
   description = <<-EOT
     Idle timeout (ms) for the team test-space branch, surfaced to the FE as
-    VITE_CIVILAI_SESSION_IDLE_MS. Default matches the value found live on
-    2026-08-02, which had been set out of band.
+    VITE_CIVILAI_SESSION_IDLE_MS. Default 30 minutes (aligned with production).
+  EOT
+}
+
+variable "production_session_idle_ms" {
+  type        = string
+  default     = "1800000"
+  description = <<-EOT
+    Idle timeout (ms) for the production Amplify branch (civil1.ai), surfaced as
+    VITE_CIVILAI_SESSION_IDLE_MS. Default 30 minutes. Without this, the FE falls
+    back to its built-in 3-minute default for platform+Cognito production builds.
   EOT
 }
 
@@ -241,9 +256,12 @@ resource "aws_amplify_branch" "main" {
   # listed here gets dropped on the next apply -- which is exactly what was about
   # to happen to the session idle timeout below (set directly on the branch, never
   # recorded here). Found 2026-08-02 by the H0-IACDRIFT check.
-  environment_variables = {
-    VITE_CIVILAI_SESSION_IDLE_MS = var.session_idle_ms
-  }
+  environment_variables = merge(
+    { VITE_CIVILAI_SESSION_IDLE_MS = var.session_idle_ms },
+    var.develop_platform_api_base != "" ? {
+      VITE_CIVILAI_PLATFORM_API = var.develop_platform_api_base
+    } : {},
+  )
 
   lifecycle {
     # Provider quirk: the Amplify API never echoes basic_auth_credentials back in a
@@ -259,9 +277,9 @@ resource "aws_amplify_branch" "main" {
 
 # Release migration (RELEASE-MIGRATION-PLAN.md, Phase 2): a second branch on the same app,
 # built from the same app-level config/env vars as branch_name -- so it is byte-identical
-# in every way that matters except which git branch it tracks. This is what lets the custom
-# domain later point at "main" (deliberate releases) while branch_name ("develop") stays the
-# team's continuous test space, with zero config drift between them.
+# in every way that matters except which git branch it tracks (and the idle timeout below).
+# This is what lets the custom domain later point at "main" (deliberate releases) while
+# branch_name ("develop") stays the team's continuous test space.
 resource "aws_amplify_branch" "production" {
   count       = var.production_branch_name != "" ? 1 : 0
   app_id      = aws_amplify_app.fe.id
@@ -270,6 +288,12 @@ resource "aws_amplify_branch" "production" {
   enable_auto_build = true
   framework         = "Web Compute"
   stage             = "PRODUCTION"
+
+  # Vite bakes VITE_* at build time — after changing this, rebuild the production branch.
+  environment_variables = {
+    VITE_CIVILAI_SESSION_IDLE_MS = var.production_session_idle_ms
+    VITE_CIVILAI_PLATFORM_API    = var.platform_api_base
+  }
 }
 
 output "app_id" {

@@ -125,7 +125,7 @@ def test_refine_prompt_includes_current_draft_and_analyst_request() -> None:
 
     assert "Section drafting requirements:" in resolved.rendered_prompt
     assert "Current draft:\nAustin Water may serve the site." in resolved.rendered_prompt
-    assert "Governed field values are unchanged" in resolved.rendered_prompt
+    assert "Known site facts are unchanged" in resolved.rendered_prompt
     assert "Analyst request:\nAdd the wastewater caveat." in resolved.rendered_prompt
 
 
@@ -269,7 +269,9 @@ def test_zoning_section_keeps_dsi_dimensionals() -> None:
             "sectionSystemPrompt": "System",
             "sections": {
                 "zoning": {
-                    "userPromptTemplate": "Zoning: {{field.ZONING_REGS}}\nLot: {{field.MIN_LOT_SIZE}}",
+                    "userPromptTemplate": (
+                        "Zoning: {{field.ZONING_REGS}}\nLot: {{field.MIN_LOT_SIZE}}"
+                    ),
                     "inputFieldCodes": ["ZONING_REGS", "MIN_LOT_SIZE"],
                     "guardrails": {},
                 }

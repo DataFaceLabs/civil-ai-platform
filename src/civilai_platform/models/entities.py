@@ -164,6 +164,9 @@ class Project(BaseModel):
     owner_user_id: str
     client_id: str | None = None
     status: ProjectStatus = ProjectStatus.ACTIVE
+    # Denormalized from project state parcel.mapboxImageUrl for workspace list thumbnails.
+    # Prefer https Mapbox static URLs; omit oversized data URLs.
+    parcel_image_url: str | None = None
     created_at: datetime
     updated_at: datetime
 

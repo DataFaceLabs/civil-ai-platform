@@ -92,6 +92,24 @@ variable "lambda_package_path" {
   description = "Path to platform Lambda zip; required when create_http_api=true."
 }
 
+variable "dynamodb_table_name" {
+  type        = string
+  default     = ""
+  description = "Override CIVILAI_DYNAMODB_TABLE. Empty uses civilai-app-<environment>."
+}
+
+variable "denied_dynamodb_table_arns" {
+  type        = list(string)
+  default     = []
+  description = "Extra DynamoDB ARNs this Lambda must not read or write (TPO plane isolation)."
+}
+
+variable "ssm_parameter_path_prefix" {
+  type        = string
+  default     = ""
+  description = "SSM path prefix for GetParameter (leading slash). Empty uses /civilai/<environment>."
+}
+
 variable "dev_auth" {
   type        = bool
   default     = false
@@ -104,7 +122,9 @@ variable "dev_auth" {
 }
 
 locals {
-  name_prefix = "civilai-${var.environment}"
+  name_prefix               = "civilai-${var.environment}"
+  dynamodb_table_name       = var.dynamodb_table_name != "" ? var.dynamodb_table_name : "civilai-app-${var.environment}"
+  ssm_parameter_path_prefix = var.ssm_parameter_path_prefix != "" ? var.ssm_parameter_path_prefix : "/civilai/${var.environment}"
 }
 
 data "aws_iam_policy_document" "lambda" {
@@ -175,7 +195,7 @@ data "aws_iam_policy_document" "lambda" {
       "ssm:GetParameters",
     ]
     resources = [
-      "arn:aws:ssm:${var.aws_region}:*:parameter/civilai/${var.environment}/*",
+      "arn:aws:ssm:${var.aws_region}:*:parameter${local.ssm_parameter_path_prefix}/*",
     ]
   }
 
@@ -219,6 +239,23 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_iam_role_policy" "deny_other_tables" {
+  count = length(var.denied_dynamodb_table_arns) > 0 ? 1 : 0
+  name  = "${local.name_prefix}-deny-other-ddb"
+  role  = aws_iam_role.lambda.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "DenyOtherAppTables"
+      Effect = "Deny"
+      Action = ["dynamodb:*"]
+      Resource = flatten([
+        for arn in var.denied_dynamodb_table_arns : [arn, "${arn}/index/*"]
+      ])
+    }]
+  })
+}
+
 resource "aws_lambda_function" "platform" {
   count = var.create_http_api ? 1 : 0
 
@@ -255,7 +292,7 @@ resource "aws_lambda_function" "platform" {
         CIVILAI_ENVIRONMENT           = var.environment
         CIVILAI_DEV_AUTH              = var.dev_auth ? "true" : "false"
         CIVILAI_STORE_BACKEND         = "dynamodb"
-        CIVILAI_DYNAMODB_TABLE        = "civilai-app-${var.environment}"
+        CIVILAI_DYNAMODB_TABLE        = local.dynamodb_table_name
         CIVILAI_ARTIFACT_BACKEND      = "s3"
         CIVILAI_APP_BUCKET            = replace(var.app_bucket_arn, "arn:aws:s3:::", "")
         CIVILAI_AGENT_CORPUS_BUCKET   = var.agent_corpus_bucket
@@ -436,6 +473,10 @@ resource "aws_lambda_permission" "apigw" {
 
 output "lambda_role_arn" {
   value = aws_iam_role.lambda.arn
+}
+
+output "lambda_role_name" {
+  value = aws_iam_role.lambda.name
 }
 
 output "lambda_function_name" {

@@ -133,6 +133,73 @@ def test_create_export_renders_real_docx_and_byo_exhibit(client: TestClient) -> 
     assert any(shape for shape in document.inline_shapes)
 
 
+def test_create_export_embeds_s3_exhibit_without_thumbnail(client: TestClient) -> None:
+    """Production path: FE no longer persists thumbnail_data_url on project state."""
+    user_id = "user-export-s3"
+    bootstrap = bootstrap_client_user(
+        client,
+        user_id,
+        email="export-s3@example.com",
+        name="Export S3 Firm",
+    )
+    tenant_id = bootstrap["memberships"][0]["tenant_id"]
+    headers = {"X-Dev-User-Id": user_id, "X-Tenant-Id": tenant_id}
+    project_id = client.post(
+        "/v1/projects",
+        json={
+            "name": "S3 Exhibit Feasibility",
+            "address": "13903 FM 812 Rd, Del Valle, TX",
+            "jurisdiction": "Travis County",
+        },
+        headers=headers,
+    ).json()["project_id"]
+
+    s3_key = artifact_svc.artifact_s3_key(tenant_id, project_id, "upload", "vicinity.png")
+    artifact_svc.store_artifact_bytes(s3_key, _PNG, content_type="image/png")
+
+    store = get_store()
+    state = store.get_project_state(tenant_id, project_id)
+    assert state
+    state = state.model_copy(
+        update={
+            "map_exhibits": [
+                MapExhibit(
+                    id="ex-s3",
+                    label="Vicinity Map",
+                    name="vicinity.png",
+                    size=len(_PNG),
+                    # Mis-tagged the way some uploads arrive; must still embed from S3.
+                    mime_type="application/octet-stream",
+                    s3_key=s3_key,
+                )
+            ],
+        }
+    )
+    store.put_project_state(state)
+
+    response = client.post(
+        f"/v1/projects/{project_id}/exports",
+        json={},
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    job = response.json()
+    assert job["status"] == "succeeded"
+
+    downloaded = client.get(
+        f"/v1/projects/{project_id}/artifacts/download",
+        params={"key": job["docx_s3_key"]},
+        headers=headers,
+    )
+    assert downloaded.status_code == 200
+    document = docx.Document(BytesIO(downloaded.content))
+    full_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    assert "EXHIBIT 1 - Vicinity Map" in full_text
+    assert "no embeddable preview" not in full_text
+    assert "could not be embedded" not in full_text
+    assert len(document.inline_shapes) >= 1
+
+
 def test_civil1_skin_export_renders_clean(client: TestClient) -> None:
     user_id = "user-civil1"
     bootstrap = bootstrap_client_user(

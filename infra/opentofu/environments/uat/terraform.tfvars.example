@@ -36,11 +36,14 @@ cors_origins = [
 ]
 
 # Add Amplify default domain after first apply, e.g. https://develop.d1234.amplifyapp.com/fstudio/*/login/callback
+# Include the gated Amplify develop origin (R1.6). Live app id d3joxyeudajkza.
 cognito_callback_urls = [
   "http://localhost:5173/fstudio/*/login/callback",
+  "https://develop.d3joxyeudajkza.amplifyapp.com/fstudio/*/login/callback",
 ]
 cognito_logout_urls = [
   "http://localhost:5173/fstudio/*/login",
+  "https://develop.d3joxyeudajkza.amplifyapp.com/fstudio/*/login",
 ]
 
 # GitHub PAT (repo scope) for Amplify + optional EC2 clone
@@ -60,6 +63,15 @@ create_amplify_app       = true
 # leaving it out is fine, but NEVER set it to "" on an environment where the branch
 # is live — that plans a destroy of the production frontend.
 fe_production_branch_name = "main"
+
+# TPO two-plane (off until plan is reviewed). Creates civilai-develop-api,
+# civilai-app-develop, and points Amplify develop at the new API. Never apply
+# infra/opentofu/environments/dev for this.
+# After apply: tofu output ci_refresh_develop_role_arn → GitHub var
+# AWS_REFRESH_DEVELOP_ROLE_ARN. Deploy-production OIDC
+# (ci_deploy_production_role_arn) is created whenever HTTP API + persistence
+# exist; set AWS_DEPLOY_PRODUCTION_ROLE_ARN on the civil-ai repo.
+# create_develop_plane = true
 
 # Run ../../scripts/package-lambda.sh before apply when create_platform_http_api=true.
 # NOTE: initial creation only. Lambda CODE deploys go through scripts/deploy-lambda.sh;

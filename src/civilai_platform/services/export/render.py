@@ -12,7 +12,6 @@ import docx
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
-from docxcompose.composer import Composer  # type: ignore[import-untyped]
 from docxtpl import DocxTemplate, InlineImage  # type: ignore[import-untyped]
 
 from civilai_platform.models.entities import MapExhibit
@@ -117,14 +116,31 @@ def _thumbnail_bytes(data_url: str | None) -> bytes | None:
         return None
 
 
+def _docx_embeddable_image_bytes(payload: bytes | None) -> bytes | None:
+    """Return bytes python-docx can add_picture, or None for PDF / empty payloads."""
+    if not payload:
+        return None
+    if payload.lstrip().startswith(b"%PDF"):
+        return None
+    return payload
+
+
+def _download_exhibit_bytes(s3_key: str | None) -> bytes | None:
+    if not s3_key:
+        return None
+    try:
+        return artifact_svc.download_artifact_bytes(s3_key)
+    except Exception:  # noqa: BLE001 — S3 ClientError / missing backend
+        return None
+
+
 def _exhibit_image(exhibit: MapExhibit) -> bytes | None:
-    mime_type = (exhibit.mime_type or "").lower()
-    if exhibit.s3_key and (mime_type.startswith("image/") or not mime_type):
-        payload = artifact_svc.download_artifact_bytes(exhibit.s3_key)
-        if payload:
-            return payload
-    # PDF previews are generated client-side and persisted specifically so the report
-    # can show the uploaded sheet before server-side PDF rasterization lands in X2.
+    # Always try the uploaded artifact first. MIME is untrusted (empty, PDF leftover
+    # after Create Exhibit, application/octet-stream) and thumbnails are no longer
+    # persisted on project state (DynamoDB 400 KB limit).
+    embeddable = _docx_embeddable_image_bytes(_download_exhibit_bytes(exhibit.s3_key))
+    if embeddable:
+        return embeddable
     return _thumbnail_bytes(exhibit.thumbnail_data_url)
 
 
@@ -132,27 +148,28 @@ def _append_byo_exhibits(rendered: bytes, exhibits: tuple[MapExhibit, ...]) -> b
     if not exhibits:
         return rendered
 
+    # Add pictures onto the skin document itself. Composing a second Document()
+    # via docxcompose dropped image relationships, so exhibit headings appeared
+    # without the embedded sheet.
     master = docx.Document(BytesIO(rendered))
-    composer = Composer(master)
     for index, exhibit in enumerate(exhibits, start=1):
-        sheet = docx.Document()
-        sheet.add_heading(f"EXHIBIT {index} - {exhibit.label or exhibit.name}", level=1)
+        master.add_page_break()
+        master.add_heading(f"EXHIBIT {index} - {exhibit.label or exhibit.name}", level=1)
         image = _exhibit_image(exhibit)
         if image:
             try:
-                sheet.add_picture(BytesIO(image), width=Inches(7.0))
+                master.add_picture(BytesIO(image), width=Inches(7.0))
             except (ValueError, OSError):
-                sheet.add_paragraph(
+                master.add_paragraph(
                     "The uploaded exhibit could not be embedded; use the original project upload."
                 )
         else:
-            sheet.add_paragraph(
+            master.add_paragraph(
                 "The uploaded exhibit is retained with the project but has no embeddable preview."
             )
-        composer.append(sheet)
 
     output = BytesIO()
-    composer.save(output)
+    master.save(output)
     return output.getvalue()
 
 

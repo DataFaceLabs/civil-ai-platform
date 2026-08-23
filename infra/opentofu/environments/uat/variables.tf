@@ -147,6 +147,16 @@ variable "create_platform_http_api" {
   description = "Lambda + HTTP API Gateway (not needed for local FE + local platform)."
 }
 
+variable "create_develop_plane" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    TPO two-plane: second Lambda + HTTP API + DynamoDB table civilai-app-develop in
+    this UAT root (not environments/dev, not a Lambda alias). Off by default so the
+    first plan can be reviewed before create. Do not reuse laptop table civilai-app-dev.
+  EOT
+}
+
 variable "dev_auth" {
   type        = bool
   default     = false

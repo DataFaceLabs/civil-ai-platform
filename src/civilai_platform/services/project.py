@@ -16,6 +16,7 @@ from civilai_platform.models.entities import (
 from civilai_platform.services import agent_corpus
 from civilai_platform.services.audit import record_audit
 from civilai_platform.services.client import sync_client_fields_to_sections
+from civilai_platform.services.feasibility_fingerprint import compact_feasibility_fingerprint
 from civilai_platform.services.project_activity import record_project_activity
 from civilai_platform.store.base import PlatformStore
 
@@ -29,6 +30,37 @@ WORKFLOW_STEPS = [
     ("exhibits", "Insights"),
     ("draft", "Draft"),
 ]
+
+# Keep list thumbnails on the Project item small (DynamoDB project payload).
+_MAX_PARCEL_IMAGE_URL_LEN = 4096
+
+
+def _parcel_image_url_from_state(state: ProjectState) -> str | None:
+    """Extract a list-safe parcel map URL from project state, if present."""
+    parcel = state.parcel if isinstance(state.parcel, dict) else None
+    if not parcel:
+        return None
+    raw = parcel.get("mapboxImageUrl") or parcel.get("mapbox_image_url")
+    if raw is None:
+        return None
+    url = str(raw).strip()
+    if not url or url == "civilai:parcel-map-unavailable":
+        return None
+    if len(url) > _MAX_PARCEL_IMAGE_URL_LEN:
+        return None
+    return url
+
+
+def _sync_project_meta_from_state(store: PlatformStore, project: Project, state: ProjectState) -> None:
+    """Denormalize list fields (e.g. parcel thumbnail) onto the Project record."""
+    updates: dict[str, object] = {"updated_at": utc_now()}
+    image_url = _parcel_image_url_from_state(state)
+    if image_url is not None and image_url != project.parcel_image_url:
+        updates["parcel_image_url"] = image_url
+    elif image_url is None and project.parcel_image_url is not None and state.parcel is not None:
+        # Parcel present but no usable image — clear stale thumbnail.
+        updates["parcel_image_url"] = None
+    store.put_project(project.model_copy(update=updates))
 
 
 def _default_sections() -> list[Section]:
@@ -180,6 +212,31 @@ def _entity_id_from_state(state: ProjectState) -> str | None:
     return None
 
 
+def _compact_state_for_storage(state: ProjectState) -> ProjectState:
+    """Shrink known oversized fields before DynamoDB PutItem (400 KB cap)."""
+    updates: dict[str, object] = {}
+    doc = state.feasibility_document
+    if doc is not None:
+        compacted = compact_feasibility_fingerprint(doc.source_fingerprint)
+        if compacted is not None and compacted != doc.source_fingerprint:
+            updates["feasibility_document"] = doc.model_copy(
+                update={"source_fingerprint": compacted}
+            )
+    if state.map_exhibits:
+        # Base64 thumbnails must not live on project state (FE already omits them).
+        stripped = [
+            exhibit.model_copy(update={"thumbnail_data_url": None})
+            if exhibit.thumbnail_data_url
+            else exhibit
+            for exhibit in state.map_exhibits
+        ]
+        if any(a.thumbnail_data_url for a in state.map_exhibits):
+            updates["map_exhibits"] = stripped
+    if not updates:
+        return state
+    return state.model_copy(update=updates)
+
+
 def patch_project_state(
     store: PlatformStore,
     *,
@@ -201,6 +258,7 @@ def patch_project_state(
         if isinstance(exc, ValidationError):
             raise ValueError(str(exc)) from exc
         raise
+    updated = _compact_state_for_storage(updated)
     store.put_project_state(updated)
     # Best-effort capture of every section milestone (edit/approve/reopen). Diffs the
     # pre-save sections against the saved ones; never blocks the save. entity_id is
@@ -216,7 +274,7 @@ def patch_project_state(
     )
     project = store.get_project(tenant_id, project_id)
     if project:
-        store.put_project(project.model_copy(update={"updated_at": utc_now()}))
+        _sync_project_meta_from_state(store, project, updated)
     record_audit(
         tenant_id=tenant_id,
         actor_user_id=actor_user_id,

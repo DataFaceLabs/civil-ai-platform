@@ -317,7 +317,7 @@ def _trace_with_field_context(
     """Echo the Prompt Lab–scoped field_context the agent actually received.
 
     The FE debug panel used to store its pre-send map. Dry-run reports dump this
-    scoped map under "Field context:"; stamping it on ``trace_summary`` lets the
+    scoped map under "Known site facts:"; stamping it on ``trace_summary`` lets the
     debug viewer show the same keys and values.
     """
     scoped = {

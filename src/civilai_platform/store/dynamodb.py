@@ -369,12 +369,23 @@ class DynamoDBStore(PlatformStore):
             self._delete(tenant_pk(tenant_id), item["SK"])
 
     def put_project_state(self, state: ProjectState) -> None:
-        self._put(
-            tenant_pk(state.tenant_id),
-            state_sk(state.project_id),
-            "ProjectState",
-            state.model_dump(),
-        )
+        try:
+            self._put(
+                tenant_pk(state.tenant_id),
+                state_sk(state.project_id),
+                "ProjectState",
+                state.model_dump(),
+            )
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            message = exc.response.get("Error", {}).get("Message", "")
+            if code == "ValidationException" and "maximum allowed size" in message.lower():
+                raise ValueError(
+                    "Project state exceeds DynamoDB item size limit (400 KB). "
+                    "Compact large embedded payloads (e.g. feasibility fingerprints) "
+                    "and retry."
+                ) from exc
+            raise
 
     def get_project_state(self, tenant_id: str, project_id: str) -> ProjectState | None:
         item = self._get(tenant_pk(tenant_id), state_sk(project_id))
