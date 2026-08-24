@@ -38,5 +38,3 @@ Floodplain Risk — Describe the floodplain status in detail, including the floo
 Watershed Characteristics — Describe the watershed classification, watershed info, and any known waterway setback(s). State the significance of this for the future use design.
 
 Drainage, Erosion, and Water Quality — Describe the drainage, erosion, and water quality information in detail, including the drainage, erosion hazard, water quality name, and description. State the significance of this for the future use design.
-
-Format: subsections with the headings above. Keep each subsection to 1–2 short paragraphs (plus a bulleted list where the content calls for one, e.g., development standards or easements). Do not add sections beyond these, and do not merge them.
