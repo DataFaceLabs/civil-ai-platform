@@ -5,11 +5,13 @@ from __future__ import annotations
 from civilai_platform.llm_defaults import ATX_CIVIL_SEARCH_DOMAINS, default_llm_lab_config
 
 
-def test_section_system_prompt_uses_unknown_fact_house_style() -> None:
+def test_section_system_prompt_is_lab_style_authority() -> None:
     prompt = default_llm_lab_config()["sectionSystemPrompt"]
-    assert "not currently known and should be confirmed" in prompt
+    assert "Use only the field values provided" in prompt
+    assert "Format sections using h2 and h3 headings" in prompt
+    assert "field data facts in bold" in prompt
+    assert "Draft voice (ACE house style" not in prompt
     assert "available field data" not in prompt.lower()
-    assert "Use only the field values provided" not in prompt
 
 
 def test_web_search_defaults_use_atx_civils_trusted_sources() -> None:

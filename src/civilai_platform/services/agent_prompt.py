@@ -12,11 +12,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 from civilai_platform.model_presets import resolve_model_id
-from civilai_platform.services.draft_voice import (
-    apply_draft_voice_to_system_prompt,
-    draft_voice_user_reminder,
-    sanitize_field_value_for_draft,
-)
+from civilai_platform.services.draft_voice import sanitize_field_value_for_draft
 from civilai_platform.services.search_policy import (
     substitute_search_hint_tokens,
     web_search_provider_configured,
@@ -249,13 +245,11 @@ def resolve_section_agent_prompt(
         section_body_plain=section_body_plain,
         fields_unchanged=fields_unchanged,
     )
-    has_exhibits = bool(_sanitized_field(scoped_field_context, "AVAILABLE_EXHIBITS"))
-    reminder = draft_voice_user_reminder(has_exhibits=has_exhibits)
-    rendered_prompt = f"{rendered_prompt}\n\n{reminder}".strip() if rendered_prompt else reminder
 
-    system_prompt = apply_draft_voice_to_system_prompt(
-        _nonempty(tenant_cfg.get("sectionSystemPrompt"))
-        or _nonempty(section.get("systemPrompt"))
+    # LLM Lab Section draft system prompt is the sole style/format authority —
+    # do not append ACE draft-voice or voice-reminder blocks.
+    system_prompt = _nonempty(tenant_cfg.get("sectionSystemPrompt")) or _nonempty(
+        section.get("systemPrompt")
     )
     model_preset = (
         _nonempty(section.get("modelPreset")) or _nonempty(tenant_cfg.get("modelPreset")) or "haiku"

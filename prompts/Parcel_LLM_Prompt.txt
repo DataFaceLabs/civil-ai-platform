@@ -28,5 +28,3 @@ Historic preservation status — describe the historic preservation status in de
 Protected status areas — Describe the protected status areas in detail, including the protected status areas score, the protected status areas factors, and the protected status areas mitigation strategies.
 
 Development agreements — Identify any recorded instrument imposing ongoing development obligations or restrictions (development/annexation agreements, PUD ordinances, restrictive covenants, CC&Rs, owners' association declarations, easement agreements with development conditions). For each, give the instrument type, recording reference, and a plain-language summary of the obligation. If none are found, state that directly and recommend a title search if one hasn't been done.
-
-Format: subsections with the headings above. No numbered headings. Keep each subsection to 1–2 short paragraphs (include a bulleted list where the content calls for one, e.g., development standards or easements). Do not add sections beyond these, and do not merge them.
