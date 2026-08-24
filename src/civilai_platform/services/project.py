@@ -31,24 +31,34 @@ WORKFLOW_STEPS = [
     ("draft", "Draft"),
 ]
 
-# Keep list thumbnails on the Project item small (DynamoDB project payload).
-_MAX_PARCEL_IMAGE_URL_LEN = 4096
+# Keep list thumbnails on the Project item bounded (DynamoDB project payload).
+# Allows compact JPEG data URLs captured from the live Mapbox canvas (~160px).
+_MAX_PARCEL_IMAGE_URL_LEN = 96_000
 
 
 def _parcel_image_url_from_state(state: ProjectState) -> str | None:
-    """Extract a list-safe parcel map URL from project state, if present."""
+    """Extract a list-safe parcel map URL from project state, if present.
+
+    Prefers a captured ``listThumbnailUrl`` (live map + boundary) over the
+    static Mapbox basemap URL.
+    """
     parcel = state.parcel if isinstance(state.parcel, dict) else None
     if not parcel:
         return None
-    raw = parcel.get("mapboxImageUrl") or parcel.get("mapbox_image_url")
-    if raw is None:
-        return None
-    url = str(raw).strip()
-    if not url or url == "civilai:parcel-map-unavailable":
-        return None
-    if len(url) > _MAX_PARCEL_IMAGE_URL_LEN:
-        return None
-    return url
+    candidates = (
+        parcel.get("listThumbnailUrl") or parcel.get("list_thumbnail_url"),
+        parcel.get("mapboxImageUrl") or parcel.get("mapbox_image_url"),
+    )
+    for raw in candidates:
+        if raw is None:
+            continue
+        url = str(raw).strip()
+        if not url or url == "civilai:parcel-map-unavailable":
+            continue
+        if len(url) > _MAX_PARCEL_IMAGE_URL_LEN:
+            continue
+        return url
+    return None
 
 
 def _sync_project_meta_from_state(store: PlatformStore, project: Project, state: ProjectState) -> None:
