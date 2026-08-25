@@ -1,14 +1,16 @@
-"""Wave 3 draft-voice rules shared by Prompt Lab resolve and defaults.
+"""Draft-voice helpers: scrub robotic Compose stems and unknown-fact leaks.
 
-Applied at prompt-resolve time so stored tenant Prompt Lab configs still get the
-ACE-style rhythm/exhibit rules without a manual reseed.
+Style and formatting for section drafts live in LLM Lab ``sectionSystemPrompt``
+(the Section draft system prompt). This module no longer injects ACE draft-voice
+or user-prompt voice reminders at resolve time.
 """
 
 from __future__ import annotations
 
 import re
 
-# Appended to every section-draft system prompt (platform resolve + agent renderer).
+# Retained for tests / callers that still import the historical constant; not
+# appended to system prompts anymore.
 DRAFT_VOICE_DIRECTIVE = """
 Draft voice (ACE house style - always apply):
 - Write short paragraphs: typically 1-3 sentences each. Prefer blank-line
@@ -33,8 +35,6 @@ Draft voice (ACE house style - always apply):
   confirmed.
 """.strip()
 
-# Injected onto stored tenant prompts that already have an older Draft voice block
-# (apply_draft_voice_to_system_prompt skips re-appending DRAFT_VOICE_DIRECTIVE).
 UNKNOWN_FACT_DIRECTIVE = """
 Unknown facts (always apply):
 - In drafted study and chat prose, never mention field data, available data,
@@ -79,22 +79,12 @@ _LONG_FIELD_CHARS = 280
 
 
 def apply_draft_voice_to_system_prompt(system_prompt: str) -> str:
-    """Ensure DRAFT_VOICE_DIRECTIVE is present exactly once on a system prompt.
+    """Pass through the LLM Lab system prompt unchanged.
 
-    Stored tenant prompts that already include an older Draft voice block still
-    receive UNKNOWN_FACT_DIRECTIVE when the unknown-fact house rule is missing.
+    Deprecated: previously appended ACE ``DRAFT_VOICE_DIRECTIVE``. Style rules
+    now live only in ``sectionSystemPrompt``.
     """
-    base = (system_prompt or "").strip()
-    marker = "Draft voice (ACE house style"
-    if not base:
-        base = DRAFT_VOICE_DIRECTIVE
-    elif marker not in base:
-        base = f"{base}\n\n{DRAFT_VOICE_DIRECTIVE}"
-    if "not currently known and should be confirmed" not in re.sub(
-        r"\s+", " ", base.lower()
-    ):
-        base = f"{base}\n\n{UNKNOWN_FACT_DIRECTIVE}"
-    return base
+    return (system_prompt or "").strip()
 
 
 def rewrite_unknown_fact_prose(text: str) -> str:
@@ -118,24 +108,11 @@ def scrub_robotic_stems(text: str) -> str:
 
 
 def sanitize_field_value_for_draft(value: str) -> str:
-    """Scrub robotic stems; leave long values intact (model paraphrases under voice rules)."""
+    """Scrub robotic stems; leave long values intact (model paraphrases under Lab rules)."""
     cleaned = scrub_robotic_stems(value)
     if not cleaned:
         return ""
     return cleaned
-
-
-def draft_voice_user_reminder(*, has_exhibits: bool) -> str:
-    """Short user-prompt reminder so pipeline format_directive paths also see the rules."""
-    if has_exhibits:
-        return (
-            "Voice reminder: short paragraphs; paraphrase fields; cite (See Exhibit: ...) only "
-            "for names listed in AVAILABLE_EXHIBITS."
-        )
-    return (
-        "Voice reminder: short paragraphs; paraphrase fields; do not invent "
-        "(See Exhibit: ...) callouts - no exhibits are listed for this project."
-    )
 
 
 def split_compose_dump_into_paragraphs(text: str, *, max_sentences: int = 2) -> str:

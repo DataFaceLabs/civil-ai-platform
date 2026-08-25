@@ -199,6 +199,52 @@ def test_project_state_patch_denormalizes_parcel_image_url(client: TestClient) -
     assert row["parcel_image_url"] == image_url
 
 
+def test_project_state_patch_prefers_list_thumbnail_url(client: TestClient) -> None:
+    admin = "list-thumb-admin"
+    boot = _bootstrap(client, admin, name="List Thumb Firm")
+    tenant_id = boot["memberships"][0]["tenant_id"]
+    h = _headers(admin, tenant_id)
+
+    project_id = client.post(
+        "/v1/projects",
+        json={"name": "Boundary Thumb", "address": "100 Congress Ave, Austin, TX"},
+        headers=h,
+    ).json()["project_id"]
+
+    basemap_url = (
+        "https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/"
+        "-97.7,30.3,18/640x640@2x?access_token=pk.test"
+    )
+    list_thumb = (
+        "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkS"
+        "Ew8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwh"
+        "MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAED"
+        "ASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEB"
+        "AQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAGfAP/EABQQ"
+        "AQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAQUCf//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQMBAT8B"
+        "f//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQIBAT8Bf//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAI"
+        "AQEABj8Cf//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAT8hf//Z"
+    )
+    patch = client.patch(
+        f"/v1/projects/{project_id}/state",
+        json={
+            "parcel": {
+                "lat": 30.3,
+                "lng": -97.7,
+                "mapboxImageUrl": basemap_url,
+                "listThumbnailUrl": list_thumb,
+            }
+        },
+        headers=h,
+    )
+    assert patch.status_code == 200
+
+    listed = client.get("/v1/projects", headers=h)
+    assert listed.status_code == 200
+    row = next(p for p in listed.json() if p["project_id"] == project_id)
+    assert row["parcel_image_url"] == list_thumb
+
+
 def test_project_state_round_trips_field_provenance_and_site_payload(client: TestClient) -> None:
     admin = "prov-admin"
     boot = _bootstrap(client, admin, name="Provenance Firm")

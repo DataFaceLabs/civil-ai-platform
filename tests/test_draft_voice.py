@@ -1,12 +1,8 @@
-"""Wave 3 draft-voice helpers."""
-
-import re
+"""Draft-voice helpers (scrubbers; system prompt is pass-through)."""
 
 from civilai_platform.services.draft_voice import (
     DRAFT_VOICE_DIRECTIVE,
-    UNKNOWN_FACT_DIRECTIVE,
     apply_draft_voice_to_system_prompt,
-    draft_voice_user_reminder,
     rewrite_unknown_fact_prose,
     sanitize_field_value_for_draft,
     scrub_robotic_stems,
@@ -14,25 +10,16 @@ from civilai_platform.services.draft_voice import (
 )
 
 
-def test_apply_draft_voice_appends_once() -> None:
-    once = apply_draft_voice_to_system_prompt("Write carefully.")
-    assert once.startswith("Write carefully.")
-    assert "Draft voice (ACE house style" in once
-    assert "not currently known and should be confirmed" in re.sub(r"\s+", " ", once)
-    assert once.count("Unknown facts (always apply)") == 0
-    twice = apply_draft_voice_to_system_prompt(once)
-    assert twice.count("Draft voice (ACE house style") == 1
-    assert twice.count("Unknown facts (always apply)") == 0
-
-
-def test_apply_draft_voice_adds_unknown_fact_rule_to_stale_voice_block() -> None:
-    stale = (
-        "Write carefully.\n\nDraft voice (ACE house style - always apply):\n"
-        "- Write short paragraphs."
+def test_apply_draft_voice_is_pass_through() -> None:
+    lab = (
+        "You're an expert civil engineer. Format sections using h2 and h3 headings."
     )
-    updated = apply_draft_voice_to_system_prompt(stale)
-    assert UNKNOWN_FACT_DIRECTIVE in updated
-    assert updated.count("Draft voice (ACE house style") == 1
+    assert apply_draft_voice_to_system_prompt(lab) == lab
+    assert apply_draft_voice_to_system_prompt(f"  {lab}  ") == lab
+    assert apply_draft_voice_to_system_prompt("") == ""
+    assert "Draft voice (ACE house style" not in apply_draft_voice_to_system_prompt(lab)
+    # Historical constant retained but not injected.
+    assert DRAFT_VOICE_DIRECTIVE.startswith("Draft voice")
 
 
 def test_rewrite_unknown_fact_prose_keeps_the_sentence() -> None:
@@ -70,9 +57,3 @@ def test_split_compose_dump_into_paragraphs() -> None:
     split = split_compose_dump_into_paragraphs(blob)
     assert "\n\n" in split
     assert len(split.split("\n\n")) >= 3
-
-
-def test_voice_reminder_depends_on_exhibits() -> None:
-    assert "do not invent" in draft_voice_user_reminder(has_exhibits=False).lower()
-    assert "AVAILABLE_EXHIBITS" in draft_voice_user_reminder(has_exhibits=True)
-    assert DRAFT_VOICE_DIRECTIVE
