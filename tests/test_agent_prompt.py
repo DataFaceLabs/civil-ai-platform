@@ -85,14 +85,14 @@ def test_resolve_section_prompt_uses_prompt_lab_config(monkeypatch) -> None:
     )
 
     assert "Write as a cautious civil engineer." in resolved.system_prompt
-    assert "Draft voice (ACE house style" in resolved.system_prompt
+    assert resolved.system_prompt == "Write as a cautious civil engineer."
+    assert "Draft voice (ACE house style" not in resolved.system_prompt
     assert "District: MF-4" in resolved.rendered_prompt
     assert "Additional guidance:\nKeep it concise." in resolved.rendered_prompt
     assert "Governed fields:" not in resolved.rendered_prompt
     assert "ZONING_DISTRICT: MF-4" not in resolved.rendered_prompt
     assert resolved.field_context["PROPERTY_ADDRESS"] == "123 Main St"
-    assert "Voice reminder:" in resolved.rendered_prompt
-    assert "do not invent" in resolved.rendered_prompt.lower()
+    assert "Voice reminder:" not in resolved.rendered_prompt
     assert resolved.model_preset == "sonnet46"
     assert resolved.model_id == "us.anthropic.claude-sonnet-4-6"
     assert resolved.temperature == 0.1
@@ -332,7 +332,7 @@ def test_compose_scrubs_robotic_stems_from_field_values() -> None:
     assert "rule extraction pending" not in prompt.lower()
 
 
-def test_resolve_allows_exhibit_callouts_when_listed() -> None:
+def test_resolve_keeps_available_exhibits_in_field_context() -> None:
     resolved = resolve_section_agent_prompt(
         {
             "modelPreset": "haiku",
@@ -349,5 +349,7 @@ def test_resolve_allows_exhibit_callouts_when_listed() -> None:
         section_id="zoning",
         field_context={"AVAILABLE_EXHIBITS": "Zoning Map; Floodplain"},
     )
-    assert "AVAILABLE_EXHIBITS" in resolved.rendered_prompt
-    assert "names listed in AVAILABLE_EXHIBITS" in resolved.rendered_prompt
+    assert resolved.field_context["AVAILABLE_EXHIBITS"] == "Zoning Map; Floodplain"
+    assert "Voice reminder:" not in resolved.rendered_prompt
+    assert "names listed in AVAILABLE_EXHIBITS" not in resolved.rendered_prompt
+    assert resolved.system_prompt == "System"
