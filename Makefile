@@ -55,6 +55,34 @@ format:
 openapi:
 	uv run python scripts/generate_openapi.py
 
+sync-llm-prompts-uat:
+	set -a && [ -f .env.local ] && . ./.env.local; set +a && \
+	CIVILAI_STORE_BACKEND=dynamodb CIVILAI_DYNAMODB_TABLE=civilai-app-uat CIVILAI_ENVIRONMENT=uat \
+	uv run python scripts/sync_llm_baseline_from_prompts.py --allow-env uat
+
+sync-llm-prompts-develop:
+	set -a && [ -f .env.local ] && . ./.env.local; set +a && \
+	CIVILAI_STORE_BACKEND=dynamodb CIVILAI_DYNAMODB_TABLE=civilai-app-develop CIVILAI_ENVIRONMENT=develop \
+	uv run python scripts/sync_llm_baseline_from_prompts.py --allow-env develop
+
+apply-llm-prompts-uat:
+	set -a && [ -f .env.local ] && . ./.env.local; set +a && \
+	CIVILAI_STORE_BACKEND=dynamodb CIVILAI_DYNAMODB_TABLE=civilai-app-uat CIVILAI_ENVIRONMENT=uat \
+	uv run python scripts/sync_llm_baseline_from_prompts.py --allow-env uat --apply --restore-tenants
+
+apply-llm-prompts-develop:
+	set -a && [ -f .env.local ] && . ./.env.local; set +a && \
+	CIVILAI_STORE_BACKEND=dynamodb CIVILAI_DYNAMODB_TABLE=civilai-app-develop CIVILAI_ENVIRONMENT=develop \
+	uv run python scripts/sync_llm_baseline_from_prompts.py --allow-env develop --apply --restore-tenants
+
+seed-llm-baseline:
+	set -a && [ -f .env.local ] && . ./.env.local; set +a && \
+	uv run python scripts/seed_llm_baseline.py
+
+refresh-llm-baseline:
+	set -a && [ -f .env.local ] && . ./.env.local; set +a && \
+	uv run python scripts/seed_llm_baseline.py --refresh
+
 seed-test-companies:
 	set -a && [ -f .env.local ] && . ./.env.local; set +a && \
 	uv run python scripts/seed_test_companies.py
