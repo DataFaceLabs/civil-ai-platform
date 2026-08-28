@@ -1,0 +1,153 @@
+# Canonical Prompt Lab section templates (exported from UAT baseline v38).
+# User prompt bodies live in *.txt siblings; this file holds inputFieldCodes and
+# per-section invoke settings so Known Site Facts match each user prompt.
+section_system_prompt_file: Section_System_Prompt.txt
+sections:
+  parcel:
+    prompt_file: Parcel_LLM_Prompt.txt
+    input_field_codes:
+      - PROPERTY_ADDRESS
+      - PROPERTY_ACRES
+      - CAD_LAND_USE
+      - EXISTING_DEVELOPMENT
+      - PROPOSED_DEVELOPMENT
+      - CAD_INFO
+      - CAD_VALUATION
+      - CAD_LEGAL_DESCRIPTION
+      - CAD_YEAR_BUILT
+      - CAD_DEED_REFERENCE
+      - BUILDING_DETAIL
+      - CAD_DISCREPANCIES
+      - ADJACENT_PROPS
+      - SITE_TOPOGRAPHY
+      - COMPLIANCE_RISK
+      - PROTECTED_AREA_STATUS
+      - HISTORIC_DESIGNATION
+    web_search_enabled: false
+    search_context_hint: ""
+    guardrails:
+      maxOutputTokens: 1024
+      temperature: 0.2
+      forbiddenPhrases:
+        - will-serve
+        - guaranteed capacity
+        - confirmed service commitment
+      requiredDisclaimers: []
+      enforceGuardrails: true
+  environmental:
+    prompt_file: Environmental_LLM_Prompt.txt
+    input_field_codes: []
+    web_search_enabled: false
+    search_context_hint: ""
+    guardrails:
+      maxOutputTokens: 1024
+      temperature: 0.2
+      forbiddenPhrases:
+        - will-serve
+        - guaranteed capacity
+        - confirmed service commitment
+      requiredDisclaimers: []
+      enforceGuardrails: true
+  access:
+    prompt_file: Access_LLM_Prompt.txt
+    input_field_codes:
+      - ROW_INFO
+      - ROW_DETAIL
+      - TIA_STATUS
+      - ROAD_CLASSIFICATION
+      - TRANSPORTATION_REQS
+      - REQUIRED_PERMITS
+      - PERMIT_CONTACTS
+    web_search_enabled: false
+    search_context_hint: ""
+    guardrails:
+      maxOutputTokens: 1024
+      temperature: 0.2
+      forbiddenPhrases:
+        - will-serve
+        - guaranteed capacity
+        - confirmed service commitment
+      requiredDisclaimers: []
+      enforceGuardrails: true
+  zoning:
+    prompt_file: Zoning_LLM_Prompt.txt
+    input_field_codes:
+      - GOVERNING_JURIS
+      - JURISDICTION_STATUS
+      - PERMITTING_AUTHORITY_DETAIL
+      - IFC_EDITION
+      - LDC_REFERENCE
+      - DEVELOPMENT_AGREEMENT
+      - ZONING_REGS
+      - PLATTING_STATUS
+      - MIN_LOT_SIZE
+      - MIN_LOT_WIDTH
+      - SETBACKS
+      - MAX_BUILDING_COVERAGE
+      - MAX_BUILDING_HEIGHT
+      - IMPERVIOUS_COVER_LIMIT
+      - IMPERVIOUS_REGS
+      - WATERSHED_CLASSIFICATION
+      - COMPATIBILITY_STDS
+      - DEV_AGREEMENTS
+      - EASEMENTS_SETBACKS
+    web_search_enabled: false
+    search_context_hint: >-
+      Prefer official municipal code, LDC, and UDC sources for the governing
+      jurisdiction.
+    guardrails:
+      maxOutputTokens: 4096
+      temperature: 0.2
+      forbiddenPhrases:
+        - will-serve
+        - guaranteed capacity
+        - confirmed service commitment
+      requiredDisclaimers: []
+      enforceGuardrails: true
+  utilities:
+    prompt_file: Utility_LLM_Prompt.txt
+    input_field_codes:
+      - WATER_SERVICE
+      - WASTEWATER_SERVICE
+      - NEAREST_WATER_MAIN_DETAIL
+      - NEAREST_WASTEWATER_MAIN_DETAIL
+      - TAP_CARDS
+      - ELECTRIC_PROVIDER
+      - FIRE_PROTECTION
+      - OSSF_REQUIREMENTS
+      - GOVERNING_JURIS
+      - PROPERTY_ADDRESS
+    web_search_enabled: true
+    search_context_hint: >-
+      {{field.GOVERNING_JURIS}} electric, water, waste service provider contact
+      email, phone and web addresses
+    guardrails:
+      maxOutputTokens: 1024
+      temperature: 0.2
+      forbiddenPhrases:
+        - will-serve
+        - guaranteed capacity
+        - confirmed service commitment
+      requiredDisclaimers:
+        - boundary only
+        - confirm with provider
+      enforceGuardrails: false
+  draft:
+    prompt_file: Draft_LLM_Prompt.txt
+    input_field_codes:
+      - PROPERTY_ADDRESS
+      - GOVERNING_JURIS
+      - PROPOSED_DEVELOPMENT
+      - RECOMMENDATIONS
+    web_search_enabled: false
+    search_context_hint: ""
+    model_preset: sonnet46
+    guardrails:
+      maxOutputTokens: 4096
+      temperature: 0.2
+      forbiddenPhrases:
+        - will-serve
+        - guaranteed capacity
+        - confirmed service commitment
+      requiredDisclaimers: []
+      enforceGuardrails: true

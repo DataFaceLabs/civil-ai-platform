@@ -24,3 +24,6 @@ aws lambda update-function-code \
 
 aws lambda wait function-updated --function-name "$FUNCTION_NAME"
 echo "=== deploy complete ==="
+echo ""
+echo "Optional: sync Prompt Lab templates to DynamoDB for this environment:"
+echo "  make apply-llm-prompts-uat     # or apply-llm-prompts-develop"

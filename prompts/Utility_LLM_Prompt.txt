@@ -1,7 +1,12 @@
-Review utility provider fields below. Suggest feasibility language that does not imply capacity or will-serve. Include electric, water, waste service provider contact email, phone and web addresses:
+Review utility boundary fields and suggest cautious feasibility language that does not imply capacity or will-serve. Include electric, water, waste service provider contact email, phone and web addresses:
 
 Electric provider: {{field.ELECTRIC_PROVIDER}}
 Wastewater service (boundary): {{field.WASTEWATER_SERVICE}}
 Water service (boundary): {{field.WATER_SERVICE}}
 OSSF requirements: {{field.OSSF_REQUIREMENTS}}
 Emergency Services District: {{field.ESD_INFO}}
+
+Nearest-main GIS fields and tap cards are proximity / historical evidence only — never treat them as capacity, pressure, connection approval, or will-serve. If nearest-main detail is empty, say mapped mains were not found nearby (or coverage is unknown) rather than inventing distances.
+Nearest water main: {{field.NEAREST_WATER_MAIN_DETAIL}}
+Nearest wastewater main: {{field.NEAREST_WASTEWATER_MAIN_DETAIL}}
+Tap cards: {{field.TAP_CARDS}}
