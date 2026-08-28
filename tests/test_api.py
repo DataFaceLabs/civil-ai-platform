@@ -306,7 +306,8 @@ def test_project_state_round_trips_field_provenance_and_site_payload(client: Tes
     patch = client.patch(f"/v1/projects/{project_id}/state", json=patch_body, headers=h)
     assert patch.status_code == 200
     body = patch.json()
-    assert body["site_payload"] == site_payload
+    # site_payload field views are slimmed before DynamoDB write; sections are authoritative.
+    assert body["site_payload"] is None
 
     address_field = body["sections"][0]["fields"]["PROPERTY_ADDRESS"]
     assert address_field["provenance"][0]["source_id"] == "tcad"
@@ -315,7 +316,7 @@ def test_project_state_round_trips_field_provenance_and_site_payload(client: Tes
     reloaded = client.get(f"/v1/projects/{project_id}/state", headers=h)
     assert reloaded.status_code == 200
     reloaded_body = reloaded.json()
-    assert reloaded_body["site_payload"] == site_payload
+    assert reloaded_body["site_payload"] is None
     reloaded_address = reloaded_body["sections"][0]["fields"]["PROPERTY_ADDRESS"]
     assert reloaded_address["provenance"][0]["citation"].startswith("https://traviscad.org")
     assert reloaded_address["source_links"][0]["href"].startswith("https://traviscad.org")
