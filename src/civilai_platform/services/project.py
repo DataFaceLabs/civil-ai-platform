@@ -222,6 +222,40 @@ def _entity_id_from_state(state: ProjectState) -> str | None:
     return None
 
 
+_SITE_PAYLOAD_PERSIST_KEYS = (
+    "entity_id",
+    "geometry",
+    "site_context",
+    "serving_source",
+    "snapshot",
+    "facts_retrieved_at",
+)
+
+
+def _slim_site_payload_for_storage(site_payload: dict[str, object] | None) -> dict[str, object] | None:
+    """Keep map/entity metadata only — section fields are authoritative on reload."""
+    if not site_payload:
+        return site_payload
+    slim = {
+        key: site_payload[key]
+        for key in _SITE_PAYLOAD_PERSIST_KEYS
+        if key in site_payload and site_payload[key] is not None
+    }
+    return slim or None
+
+
+def _strip_parcel_list_thumbnail(parcel: dict[str, object] | None) -> dict[str, object] | None:
+    """Drop JPEG data URLs after Project.parcel_image_url is synced."""
+    if not parcel:
+        return parcel
+    if "listThumbnailUrl" not in parcel and "list_thumbnail_url" not in parcel:
+        return parcel
+    stripped = dict(parcel)
+    stripped.pop("listThumbnailUrl", None)
+    stripped.pop("list_thumbnail_url", None)
+    return stripped
+
+
 def _compact_state_for_storage(state: ProjectState) -> ProjectState:
     """Shrink known oversized fields before DynamoDB PutItem (400 KB cap)."""
     updates: dict[str, object] = {}
@@ -242,6 +276,12 @@ def _compact_state_for_storage(state: ProjectState) -> ProjectState:
         ]
         if any(a.thumbnail_data_url for a in state.map_exhibits):
             updates["map_exhibits"] = stripped
+    slim_payload = _slim_site_payload_for_storage(state.site_payload)
+    if slim_payload != state.site_payload:
+        updates["site_payload"] = slim_payload
+    stripped_parcel = _strip_parcel_list_thumbnail(state.parcel)
+    if stripped_parcel != state.parcel:
+        updates["parcel"] = stripped_parcel
     if not updates:
         return state
     return state.model_copy(update=updates)
@@ -268,6 +308,10 @@ def patch_project_state(
         if isinstance(exc, ValidationError):
             raise ValueError(str(exc)) from exc
         raise
+    project = store.get_project(tenant_id, project_id)
+    if project:
+        # Sync list thumbnail onto Project meta before stripping it from state.
+        _sync_project_meta_from_state(store, project, updated)
     updated = _compact_state_for_storage(updated)
     store.put_project_state(updated)
     # Best-effort capture of every section milestone (edit/approve/reopen). Diffs the
@@ -282,9 +326,6 @@ def patch_project_state(
         old_sections=state.sections,
         new_sections=updated.sections,
     )
-    project = store.get_project(tenant_id, project_id)
-    if project:
-        _sync_project_meta_from_state(store, project, updated)
     record_audit(
         tenant_id=tenant_id,
         actor_user_id=actor_user_id,
