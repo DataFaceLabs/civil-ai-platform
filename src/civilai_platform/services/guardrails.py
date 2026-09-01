@@ -240,6 +240,35 @@ def resolve_guardrails(
     return effective_to_response(effective)
 
 
+def resolve_guardrails_effective(
+    store: PlatformStore,
+    *,
+    domain: str = GUARDRAILS_DOMAIN,
+    state_abbr: str | None = None,
+    county_fips: str | None = None,
+    jurisdiction_key: str | None = None,
+    catalog_ready: bool | None = None,
+    data_client: DataProxyClient | None = None,
+) -> EffectiveGuardRails:
+    """Internal merge result for server-side compute (brief, agent)."""
+    if domain != GUARDRAILS_DOMAIN:
+        return EffectiveGuardRails(domain=GUARDRAILS_DOMAIN)
+
+    ready = (
+        catalog_ready
+        if catalog_ready is not None
+        else jurisdiction_catalog_ready(data_client, jurisdiction_key)
+    )
+    layers = _layers_for_request(
+        store,
+        state_abbr=state_abbr,
+        county_fips=county_fips,
+        jurisdiction_key=jurisdiction_key,
+        domain=domain,
+    )
+    return merge_guardrails(layers, catalog_ready=ready)
+
+
 def _load_seed_yaml(path: Path) -> GuardRailsScopeRecord:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     scope_key = str(raw.get("scope_key", ""))
