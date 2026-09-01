@@ -167,6 +167,14 @@ def _invoke_strands_agent(context_payload: dict[str, Any], *, dry_run: bool) -> 
         context_data["zoning_scenario"] = (
             dict(zoning_raw) if isinstance(zoning_raw, dict) else None
         )
+    if "topic_briefs" in WorkbenchContext.model_fields:
+        raw_briefs = context_payload.get("topic_briefs") or []
+        if isinstance(raw_briefs, list):
+            context_data["topic_briefs"] = tuple(
+                item for item in raw_briefs if isinstance(item, dict)
+            )
+        else:
+            context_data["topic_briefs"] = ()
     context = WorkbenchContext(**context_data)
     with _agent_data_api_base(context_payload.get("_data_api_base")):
         response = run_agent(context, dry_run=dry_run)
@@ -280,6 +288,36 @@ def _build_context_payload(
     if project_state and project_state.zoning_scenario is not None:
         zs = project_state.zoning_scenario
         zoning_scenario = zs.model_dump() if hasattr(zs, "model_dump") else dict(zs)  # type: ignore[arg-type]
+    topic_briefs: list[dict[str, Any]] = []
+    if (
+        workflow == "section_draft"
+        and active_section_id == "zoning"
+        and project_state is not None
+    ):
+        from civilai_platform.services import topic_brief as topic_brief_svc
+        from civilai_platform.services.data_proxy import DataProxyClient
+        from civilai_platform.services.zoning_brief_context import build_zoning_brief_request
+
+        brief_request = build_zoning_brief_request(
+            field_context=resolved_field_context,
+            project_state=project_state,
+        )
+        if brief_request is not None:
+            try:
+                client = DataProxyClient(base_url=data_api_base)
+                brief_response = topic_brief_svc.build_zoning_briefs(
+                    store,
+                    brief_request,
+                    data_client=client,
+                )
+                topic_briefs = [
+                    brief.model_dump(mode="json") for brief in brief_response.briefs
+                ]
+            except Exception:
+                logger.info(
+                    "Topic brief prefetch skipped for zoning section draft",
+                    exc_info=True,
+                )
     return {
         "project_id": project_id,
         "tenant_id": tenant_id,
@@ -307,6 +345,7 @@ def _build_context_payload(
         "chat_system_prompt": chat_system_prompt,
         "chat_instructions": list(chat_instructions),
         "llm_config": tenant_llm,
+        "topic_briefs": topic_briefs,
     }
 
 
