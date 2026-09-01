@@ -6,6 +6,7 @@ from civilai_platform.api.deps import admin_ctx, get_store_dep, tenant_ctx
 from civilai_platform.auth.context import AuthContext
 from civilai_platform.models.api import (
     EffectiveGuardRailsResponse,
+    GuardRailsAuditListResponse,
     GuardRailsScopeListResponse,
     GuardRailsScopeResponse,
     GuardRailsScopeUpsert,
@@ -53,6 +54,20 @@ def list_guardrails_scopes(
 ) -> GuardRailsScopeListResponse:
     _ = ctx
     return guardrails_svc.list_scopes_response(store)
+
+
+@router.get(
+    "/v1/admin/guardrails/zoning/audit",
+    response_model=GuardRailsAuditListResponse,
+)
+def list_guardrails_audit(
+    ctx: Annotated[AuthContext, Depends(admin_ctx)],
+    store: Annotated[PlatformStore, Depends(get_store_dep)],
+    limit: int = Query(50, ge=1, le=200),
+) -> GuardRailsAuditListResponse:
+    _ = ctx
+    tenant_id = ctx.tenant_id or "platform"
+    return guardrails_svc.list_audit_response(store, tenant_id=tenant_id, limit=limit)
 
 
 @router.get(

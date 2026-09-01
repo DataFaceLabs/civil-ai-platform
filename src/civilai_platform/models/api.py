@@ -517,6 +517,21 @@ class GuardRailsScopeResponse(BaseModel):
 
 class GuardRailsScopeListResponse(BaseModel):
     scopes: list[GuardRailsScopeResponse]
+    guardrails_version: str | None = None
+    version_updated_at: datetime | None = None
+
+
+class GuardRailsAuditEventResponse(BaseModel):
+    event_id: str
+    actor_user_id: str
+    action: str
+    resource_id: str
+    detail: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class GuardRailsAuditListResponse(BaseModel):
+    events: list[GuardRailsAuditEventResponse]
 
 
 class EffectiveGuardRailsResponse(BaseModel):
