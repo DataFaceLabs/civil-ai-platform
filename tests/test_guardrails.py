@@ -114,6 +114,44 @@ def test_seattle_seed_marks_ic_not_applicable(store: MemoryStore) -> None:
     assert "jurisdiction:seattle" in effective.applied_scopes
 
 
+def test_brief_system_prompt_most_specific_wins() -> None:
+    layers = [
+        GuardRailsScopePayload(
+            scope_key="_default",
+            brief_system_prompt="default prompt",
+        ),
+        GuardRailsScopePayload(
+            scope_key="jurisdiction:seattle",
+            brief_system_prompt="seattle prompt",
+        ),
+    ]
+    effective = merge_guardrails(layers, catalog_ready=True)
+    assert effective.brief_system_prompt == "seattle prompt"
+
+
+def test_effective_preview_admin_endpoint(client: TestClient, store: MemoryStore) -> None:
+    store.set_platform_admin("gr-preview", True)
+    guardrails_svc.seed_zoning_guardrails_from_yaml(
+        store, seed_dir=_TEST_SEED_DIR, refresh=True
+    )
+    h = _headers("gr-preview")
+    res = client.get(
+        "/v1/admin/guardrails/zoning/effective-preview",
+        headers=h,
+        params={
+            "state_abbr": "WA",
+            "county_fips": "53033",
+            "jurisdiction_key": "seattle",
+            "catalog_ready": "true",
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["topic_hydrate_enabled"] is True
+    assert body["brief_system_prompt"].strip()
+    assert "height_far" in body["topics"]
+
+
 def test_admin_guardrails_crud(client: TestClient, store: MemoryStore) -> None:
     from civilai_platform.services import platform_tenant as platform_tenant_svc
 

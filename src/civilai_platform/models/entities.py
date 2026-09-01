@@ -371,6 +371,7 @@ class GuardRailsScopeRecord(BaseModel):
     domain: str = "zoning"
     scope_key: str
     schema_version: int = 1
+    brief_system_prompt: str | None = None
     fields: dict[str, Any] = Field(default_factory=dict)
     topics: dict[str, Any] = Field(default_factory=dict)
     updated_at: datetime

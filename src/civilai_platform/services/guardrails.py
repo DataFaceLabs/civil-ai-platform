@@ -53,6 +53,7 @@ def _record_to_payload(record: GuardRailsScopeRecord) -> GuardRailsScopePayload:
         domain=record.domain,
         scope_key=record.scope_key,
         schema_version=record.schema_version,
+        brief_system_prompt=record.brief_system_prompt,
         fields=fields,
         topics=topics,
     )
@@ -66,6 +67,7 @@ def _scope_version_hash(scopes: list[GuardRailsScopeRecord]) -> str:
                 "fields": record.fields,
                 "topics": record.topics,
                 "schema_version": record.schema_version,
+                "brief_system_prompt": record.brief_system_prompt,
             }
             for record in sorted(scopes, key=lambda r: r.scope_key)
         },
@@ -96,6 +98,7 @@ def scope_to_response(record: GuardRailsScopeRecord) -> GuardRailsScopeResponse:
         domain=record.domain,
         scope_key=record.scope_key,
         schema_version=record.schema_version,
+        brief_system_prompt=record.brief_system_prompt,
         fields=record.fields,
         topics=record.topics,
         updated_at=record.updated_at,
@@ -111,6 +114,7 @@ def effective_to_response(effective: EffectiveGuardRails) -> EffectiveGuardRails
         applied_scopes=effective.applied_scopes,
         guardrails_version=effective.guardrails_version,
         topic_hydrate_enabled=effective.topic_hydrate_enabled,
+        brief_system_prompt=effective.brief_system_prompt,
     )
 
 
@@ -171,11 +175,13 @@ def upsert_scope(
     topics: dict[str, Any],
     schema_version: int,
     actor_user_id: str,
+    brief_system_prompt: str | None = None,
 ) -> GuardRailsScopeResponse:
     record = GuardRailsScopeRecord(
         domain=domain,
         scope_key=scope_key,
         schema_version=schema_version,
+        brief_system_prompt=brief_system_prompt,
         fields=fields,
         topics=topics,
         updated_at=utc_now(),
@@ -311,6 +317,7 @@ def _load_seed_yaml(path: Path) -> GuardRailsScopeRecord:
         domain=str(raw.get("domain", GUARDRAILS_DOMAIN)),
         scope_key=scope_key,
         schema_version=int(raw.get("schema_version", 1)),
+        brief_system_prompt=raw.get("brief_system_prompt"),
         fields=raw.get("fields") or {},
         topics=raw.get("topics") or {},
         updated_at=utc_now(),

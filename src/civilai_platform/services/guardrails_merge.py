@@ -17,6 +17,11 @@ class RetrievalBudget(BaseModel):
     hops: int = 2
 
 
+class TopicSearchQuery(BaseModel):
+    query: str = Field(min_length=1)
+    domains: list[str] | None = None
+
+
 class FieldGuardRail(BaseModel):
     source_tier: list[SourceTier] = Field(default_factory=lambda: ["lake", "dsi"])
     citation_required: bool = True
@@ -29,12 +34,17 @@ class TopicGuardRail(BaseModel):
     enabled: bool = True
     source_tier: list[SourceTier] = Field(default_factory=lambda: ["topic_hydrate"])
     retrieval_budget: RetrievalBudget | None = None
+    dsi_pin_fields: list[str] = Field(
+        default_factory=lambda: ["dimensional_schedule_section_id"]
+    )
+    search_queries: list[TopicSearchQuery] = Field(default_factory=list)
 
 
 class GuardRailsScopePayload(BaseModel):
     domain: str = "zoning"
     scope_key: str
     schema_version: int = 1
+    brief_system_prompt: str | None = None
     fields: dict[str, FieldGuardRail] = Field(default_factory=dict)
     topics: dict[str, TopicGuardRail] = Field(default_factory=dict)
 
@@ -46,6 +56,7 @@ class EffectiveGuardRails(BaseModel):
     applied_scopes: list[str] = Field(default_factory=list)
     guardrails_version: str = ""
     topic_hydrate_enabled: bool = False
+    brief_system_prompt: str = ""
 
 
 def _deep_merge_dict(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
@@ -80,10 +91,13 @@ def merge_scope_payloads(
     merged_fields: dict[str, dict[str, Any]] = {}
     merged_topics: dict[str, dict[str, Any]] = {}
     applied: list[str] = []
+    brief_system_prompt = ""
     for layer in layers:
         if not layer.scope_key:
             continue
         applied.append(layer.scope_key)
+        if layer.brief_system_prompt and layer.brief_system_prompt.strip():
+            brief_system_prompt = layer.brief_system_prompt.strip()
         for code, rule in layer.fields.items():
             merged_fields[code] = _deep_merge_dict(
                 merged_fields.get(code, {}),
@@ -96,7 +110,7 @@ def merge_scope_payloads(
             )
     fields = {k: FieldGuardRail.model_validate(v) for k, v in merged_fields.items()}
     topics = {k: TopicGuardRail.model_validate(v) for k, v in merged_topics.items()}
-    return fields, topics, applied
+    return fields, topics, applied, brief_system_prompt
 
 
 def _apply_catalog_gate(
@@ -137,7 +151,7 @@ def merge_guardrails(
     *,
     catalog_ready: bool = False,
 ) -> EffectiveGuardRails:
-    fields, topics, applied = merge_scope_payloads(layers)
+    fields, topics, applied, brief_system_prompt = merge_scope_payloads(layers)
     fields, topics, topic_hydrate_enabled = _apply_catalog_gate(
         fields, topics, catalog_ready=catalog_ready
     )
@@ -148,6 +162,7 @@ def merge_guardrails(
         "topics": {k: v.model_dump() for k, v in sorted(topics.items())},
         "applied_scopes": applied,
         "catalog_ready": catalog_ready,
+        "brief_system_prompt": brief_system_prompt,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     version = hashlib.sha256(canonical.encode()).hexdigest()[:16]
@@ -158,4 +173,5 @@ def merge_guardrails(
         applied_scopes=applied,
         guardrails_version=version,
         topic_hydrate_enabled=topic_hydrate_enabled,
+        brief_system_prompt=brief_system_prompt,
     )

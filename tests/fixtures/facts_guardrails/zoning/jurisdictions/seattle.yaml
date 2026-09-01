@@ -20,6 +20,27 @@ topics:
       searches: 4
       gets: 8
       hops: 3
+    dsi_pin_fields:
+      - dimensional_schedule_section_id
+    search_queries:
+      - query: floor area ratio
+        domains: [zoning]
+      - query: development standards height
+        domains: [zoning]
+  overlay_modifiers:
+    enabled: true
+    source_tier: [topic_hydrate, topic_summary]
+    search_queries:
+      - query: overlay district
+        domains: [zoning]
+  affordability_mha:
+    enabled: true
+    source_tier: [topic_hydrate, topic_summary]
+    search_queries:
+      - query: mandatory housing affordability
+        domains: [zoning]
+      - query: development standard MHA
+        domains: [zoning]
   design_historic:
     enabled: true
     source_tier: [topic_summary]
