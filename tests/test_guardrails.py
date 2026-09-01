@@ -154,6 +154,19 @@ def test_admin_guardrails_crud(client: TestClient, store: MemoryStore) -> None:
     )
     assert del_res.status_code == 204
 
+    audit_res = client.get("/v1/admin/guardrails/zoning/audit", headers=h)
+    assert audit_res.status_code == 200
+    events = audit_res.json()["events"]
+    assert len(events) >= 2
+    actions = {e["action"] for e in events}
+    assert "guardrails.scope.upsert" in actions
+    assert "guardrails.scope.delete" in actions
+
+    list_with_version = client.get("/v1/admin/guardrails/zoning/scopes", headers=h)
+    assert list_with_version.status_code == 200
+    body = list_with_version.json()
+    assert "guardrails_version" in body
+
 
 def test_resolve_requires_tenant_membership(client: TestClient, store: MemoryStore) -> None:
     from tests.seed import seed_tenant_member

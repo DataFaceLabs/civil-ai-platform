@@ -11,6 +11,8 @@ import yaml
 
 from civilai_platform.models.api import (
     EffectiveGuardRailsResponse,
+    GuardRailsAuditEventResponse,
+    GuardRailsAuditListResponse,
     GuardRailsScopeListResponse,
     GuardRailsScopeResponse,
 )
@@ -114,7 +116,40 @@ def effective_to_response(effective: EffectiveGuardRails) -> EffectiveGuardRails
 
 def list_scopes_response(store: PlatformStore, *, domain: str = GUARDRAILS_DOMAIN) -> GuardRailsScopeListResponse:
     scopes = sorted(store.list_guardrails_scopes(domain), key=lambda r: r.scope_key)
-    return GuardRailsScopeListResponse(scopes=[scope_to_response(s) for s in scopes])
+    meta = store.get_guardrails_version_meta(domain)
+    return GuardRailsScopeListResponse(
+        scopes=[scope_to_response(s) for s in scopes],
+        guardrails_version=meta.version_hash if meta else None,
+        version_updated_at=meta.updated_at if meta else None,
+    )
+
+
+def list_audit_response(
+    store: PlatformStore,
+    *,
+    tenant_id: str = "platform",
+    limit: int = 50,
+) -> GuardRailsAuditListResponse:
+    events = store.list_audit_events(tenant_id, limit=limit)
+    filtered = [
+        e
+        for e in events
+        if e.resource_type == "guardrails_scope"
+        or e.action.startswith("guardrails.")
+    ]
+    return GuardRailsAuditListResponse(
+        events=[
+            GuardRailsAuditEventResponse(
+                event_id=e.event_id,
+                actor_user_id=e.actor_user_id,
+                action=e.action,
+                resource_id=e.resource_id,
+                detail=e.detail,
+                created_at=e.created_at,
+            )
+            for e in filtered[:limit]
+        ]
+    )
 
 
 def get_scope_response(
