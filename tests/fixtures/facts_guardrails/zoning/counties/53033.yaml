@@ -1,0 +1,10 @@
+domain: zoning
+scope_key: county:53033
+schema_version: 1
+topics:
+  parking_access:
+    enabled: true
+    source_tier: [topic_summary]
+  shoreline:
+    enabled: true
+    source_tier: [topic_summary]

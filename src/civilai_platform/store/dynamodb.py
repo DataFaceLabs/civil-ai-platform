@@ -10,6 +10,8 @@ from civilai_platform.models.entities import (
     AuditEvent,
     Client,
     ExportJob,
+    GuardRailsScopeRecord,
+    GuardRailsVersionMeta,
     LlmBaselineTemplate,
     LlmInvokeJob,
     Project,
@@ -33,6 +35,9 @@ from civilai_platform.store.keys import (
     gsi2_sk_audit,
     llm_baseline_pk,
     llm_baseline_sk,
+    guardrails_meta_sk,
+    guardrails_pk,
+    guardrails_scope_sk,
     llm_invoke_job_sk,
     membership_sk,
     profile_sk,
@@ -525,3 +530,47 @@ class DynamoDBStore(PlatformStore):
         if not item:
             return None
         return LlmInvokeJob.model_validate(json.loads(item["payload"]))
+
+    def get_guardrails_scope(self, domain: str, scope_key: str) -> GuardRailsScopeRecord | None:
+        item = self._get(guardrails_pk(domain), guardrails_scope_sk(scope_key))
+        if not item:
+            return None
+        return GuardRailsScopeRecord.model_validate(json.loads(item["payload"]))
+
+    def put_guardrails_scope(self, record: GuardRailsScopeRecord) -> None:
+        self._put(
+            guardrails_pk(record.domain),
+            guardrails_scope_sk(record.scope_key),
+            "GuardRailsScopeRecord",
+            record.model_dump(),
+        )
+
+    def delete_guardrails_scope(self, domain: str, scope_key: str) -> None:
+        self._delete(guardrails_pk(domain), guardrails_scope_sk(scope_key))
+
+    def list_guardrails_scopes(self, domain: str) -> list[GuardRailsScopeRecord]:
+        items = self._query_items(
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :prefix)",
+            ExpressionAttributeValues={
+                ":pk": guardrails_pk(domain),
+                ":prefix": "SCOPE#",
+            },
+        )
+        return [
+            GuardRailsScopeRecord.model_validate(json.loads(item["payload"]))
+            for item in items
+        ]
+
+    def get_guardrails_version_meta(self, domain: str) -> GuardRailsVersionMeta | None:
+        item = self._get(guardrails_pk(domain), guardrails_meta_sk())
+        if not item:
+            return None
+        return GuardRailsVersionMeta.model_validate(json.loads(item["payload"]))
+
+    def put_guardrails_version_meta(self, meta: GuardRailsVersionMeta) -> None:
+        self._put(
+            guardrails_pk(meta.domain),
+            guardrails_meta_sk(),
+            "GuardRailsVersionMeta",
+            meta.model_dump(),
+        )

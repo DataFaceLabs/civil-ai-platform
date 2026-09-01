@@ -1,0 +1,25 @@
+domain: zoning
+scope_key: jurisdiction:seattle
+schema_version: 1
+fields:
+  IMPERVIOUS_COVER_LIMIT:
+    source_tier: [lake, topic_summary]
+    citation_required: true
+    llm_extract_allowed: false
+    not_applicable: true
+  GREEN_FACTOR_MIN:
+    source_tier: [topic_hydrate, topic_summary]
+    citation_required: true
+    llm_extract_allowed: true
+    show_when_populated: true
+topics:
+  height_far:
+    enabled: true
+    source_tier: [topic_hydrate]
+    retrieval_budget:
+      searches: 4
+      gets: 8
+      hops: 3
+  design_historic:
+    enabled: true
+    source_tier: [topic_summary]

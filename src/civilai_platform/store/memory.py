@@ -5,6 +5,8 @@ from civilai_platform.models.entities import (
     AuditEvent,
     Client,
     ExportJob,
+    GuardRailsScopeRecord,
+    GuardRailsVersionMeta,
     LlmBaselineTemplate,
     LlmInvokeJob,
     Project,
@@ -35,6 +37,8 @@ class MemoryStore(PlatformStore):
         self._slug_index: dict[str, str] = {}
         self._llm_baseline: LlmBaselineTemplate | None = None
         self._tenant_llm: dict[str, TenantLlmConfig] = {}
+        self._guardrails_scopes: dict[tuple[str, str], GuardRailsScopeRecord] = {}
+        self._guardrails_meta: dict[str, GuardRailsVersionMeta] = {}
 
     def put_tenant(self, tenant: Tenant) -> None:
         existing = self._tenants.get(tenant.tenant_id)
@@ -236,3 +240,25 @@ class MemoryStore(PlatformStore):
 
     def get_llm_invoke_job(self, tenant_id: str, job_id: str) -> LlmInvokeJob | None:
         return self._llm_invoke_jobs.get((tenant_id, job_id))
+
+    def get_guardrails_scope(self, domain: str, scope_key: str) -> GuardRailsScopeRecord | None:
+        return self._guardrails_scopes.get((domain, scope_key))
+
+    def put_guardrails_scope(self, record: GuardRailsScopeRecord) -> None:
+        self._guardrails_scopes[(record.domain, record.scope_key)] = record
+
+    def delete_guardrails_scope(self, domain: str, scope_key: str) -> None:
+        self._guardrails_scopes.pop((domain, scope_key), None)
+
+    def list_guardrails_scopes(self, domain: str) -> list[GuardRailsScopeRecord]:
+        return [
+            record
+            for (d, _), record in self._guardrails_scopes.items()
+            if d == domain
+        ]
+
+    def get_guardrails_version_meta(self, domain: str) -> GuardRailsVersionMeta | None:
+        return self._guardrails_meta.get(domain)
+
+    def put_guardrails_version_meta(self, meta: GuardRailsVersionMeta) -> None:
+        self._guardrails_meta[meta.domain] = meta

@@ -363,3 +363,22 @@ class LlmInvokeJob(BaseModel):
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None = None
+
+
+class GuardRailsScopeRecord(BaseModel):
+    """One persisted guard rail scope layer (DynamoDB runtime)."""
+
+    domain: str = "zoning"
+    scope_key: str
+    schema_version: int = 1
+    fields: dict[str, Any] = Field(default_factory=dict)
+    topics: dict[str, Any] = Field(default_factory=dict)
+    updated_at: datetime
+    updated_by_user_id: str | None = None
+
+
+class GuardRailsVersionMeta(BaseModel):
+    domain: str = "zoning"
+    version_hash: str
+    updated_at: datetime
+    updated_by_user_id: str | None = None
