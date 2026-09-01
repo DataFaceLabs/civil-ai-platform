@@ -26,6 +26,18 @@ def llm_baseline_sk() -> str:
     return "LLM_BASELINE"
 
 
+def guardrails_pk(domain: str) -> str:
+    return f"GUARDRAILS#{domain}"
+
+
+def guardrails_scope_sk(scope_key: str) -> str:
+    return f"SCOPE#{scope_key}"
+
+
+def guardrails_meta_sk() -> str:
+    return "META#version"
+
+
 def tenant_llm_config_sk() -> str:
     return "LLM_CONFIG"
 
