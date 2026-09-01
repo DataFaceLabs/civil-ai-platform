@@ -158,7 +158,7 @@ def _invoke_topic_llm(
             "query_mode": "deterministic",
             "restrict_provider_domains": True,
             "max_queries_per_invoke": 0,
-            "max_results_per_query": 0,
+            "max_results_per_query": 1,
             "allowed_domains": [],
             "blocked_domains": [],
             "search_depth": "basic",
@@ -388,15 +388,28 @@ def build_zoning_briefs(
             )
             continue
 
-        llm_payload = _invoke_topic_llm(
-            topic_id=topic_id,
-            topic_label=_topic_label(topic_id),
-            context=request,
-            sections=sections,
-            summary_only=summary_only,
-            data_client=data_client,
-            llm_invoke=llm_invoke,
-        )
+        llm_payload: dict[str, Any]
+        try:
+            llm_payload = _invoke_topic_llm(
+                topic_id=topic_id,
+                topic_label=_topic_label(topic_id),
+                context=request,
+                sections=sections,
+                summary_only=summary_only,
+                data_client=data_client,
+                llm_invoke=llm_invoke,
+            )
+        except Exception as exc:
+            briefs.append(
+                TopicBrief(
+                    topic_id=topic_id,
+                    label=_topic_label(topic_id),
+                    status="partial",
+                    guardrails_version=effective.guardrails_version,
+                    message=f"brief LLM failed: {exc}",
+                )
+            )
+            continue
         briefs.append(
             _brief_from_llm(
                 topic_id=topic_id,
