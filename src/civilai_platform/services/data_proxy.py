@@ -242,3 +242,7 @@ class DataProxyClient:
             timeout=llm_invoke_timeout_sec(step_key=step_key),
             base_url=llm_api_base(self.base_url),
         )
+
+    def retrieve_regtext(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Topic Hydrate deterministic section retrieval (civil-ai-data Slice 1)."""
+        return self.request("POST", "/v1/regtext/retrieve", json=body)
