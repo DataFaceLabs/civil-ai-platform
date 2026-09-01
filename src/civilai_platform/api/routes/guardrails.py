@@ -71,6 +71,31 @@ def list_guardrails_audit(
 
 
 @router.get(
+    "/v1/admin/guardrails/zoning/effective-preview",
+    response_model=EffectiveGuardRailsResponse,
+)
+def preview_effective_guardrails(
+    request: Request,
+    ctx: Annotated[AuthContext, Depends(admin_ctx)],
+    store: Annotated[PlatformStore, Depends(get_store_dep)],
+    state_abbr: str | None = Query(None),
+    county_fips: str | None = Query(None),
+    jurisdiction_key: str | None = Query(None),
+    catalog_ready: bool | None = Query(None),
+) -> EffectiveGuardRailsResponse:
+    _ = ctx
+    client = DataProxyClient(base_url=data_api_base_for_request(request))
+    return guardrails_svc.resolve_guardrails(
+        store,
+        state_abbr=state_abbr,
+        county_fips=county_fips,
+        jurisdiction_key=jurisdiction_key,
+        catalog_ready=catalog_ready,
+        data_client=client,
+    )
+
+
+@router.get(
     "/v1/admin/guardrails/zoning/scopes/{scope_key:path}",
     response_model=GuardRailsScopeResponse,
 )
@@ -107,6 +132,7 @@ def put_guardrails_scope(
         fields=body.fields,
         topics=body.topics,
         schema_version=body.schema_version,
+        brief_system_prompt=body.brief_system_prompt,
         actor_user_id=ctx.user_id,
     )
     record_audit(

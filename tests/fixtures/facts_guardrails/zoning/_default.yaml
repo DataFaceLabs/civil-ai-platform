@@ -1,6 +1,28 @@
 domain: zoning
 scope_key: _default
 schema_version: 1
+brief_system_prompt: |
+  You summarize one zoning ordinance topic for a land-development feasibility study.
+
+  Rules:
+  - Use ONLY the ordinance sections provided in the user message. Do not use outside knowledge or web search.
+  - Do not invent numeric standards, contacts, or commitments.
+  - Utility service boundaries are not capacity or will-serve guarantees.
+  - When citing a standard, include the section_id and a short verbatim quote from the provided text.
+  - If the sections do not support a numeric extract, omit that field rather than guessing.
+
+  Respond with JSON only (no markdown fences):
+  {
+    "summary": "2-4 sentence plain-language summary for the analyst",
+    "fields": [
+      {"fe_code": "MAX_BUILDING_HEIGHT", "value": "55 ft", "section_id": "...", "quote": "..."}
+    ],
+    "citations": [
+      {"section_id": "...", "citation": "SMC 23.47A.012", "quote": "..."}
+    ]
+  }
+
+  fields may be empty when the topic is summary-only. Every field with a numeric or dimensional value MUST include section_id and quote.
 fields:
   ZONING_REGS:
     source_tier: [lake]
@@ -42,30 +64,66 @@ topics:
   district_identity:
     enabled: true
     source_tier: [topic_summary]
+    search_queries:
+      - query: zoning district classification
+        domains: [zoning]
   height_far:
     enabled: false
     source_tier: [topic_hydrate]
+    search_queries:
+      - query: building height
+        domains: [zoning]
+      - query: floor area ratio
+        domains: [zoning]
   setbacks_bulk:
     enabled: false
     source_tier: [topic_hydrate]
+    search_queries:
+      - query: setback yard
+        domains: [zoning]
+      - query: lot coverage
+        domains: [zoning]
   uses_density:
     enabled: false
     source_tier: [topic_hydrate]
+    search_queries:
+      - query: permitted use density
+        domains: [zoning]
   parking_access:
     enabled: false
     source_tier: [topic_summary]
+    search_queries:
+      - query: parking requirements
+        domains: [zoning]
   landscaping:
     enabled: false
     source_tier: [topic_hydrate, topic_summary]
+    search_queries:
+      - query: impervious cover
+        domains: [zoning]
+      - query: landscaping standards
+        domains: [zoning]
   overlay_modifiers:
     enabled: false
     source_tier: [topic_hydrate, topic_summary]
+    search_queries:
+      - query: overlay district
+        domains: [zoning]
   affordability_mha:
     enabled: false
     source_tier: [topic_hydrate, topic_summary]
+    search_queries:
+      - query: affordable housing
+        domains: [zoning]
   shoreline:
     enabled: false
     source_tier: [topic_summary]
+    search_queries:
+      - query: shoreline management
+        domains: [zoning]
   design_historic:
     enabled: false
     source_tier: [topic_summary]
+    search_queries:
+      - query: design review historic
+        domains: [zoning]

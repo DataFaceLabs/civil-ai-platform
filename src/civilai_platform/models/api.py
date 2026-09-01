@@ -501,6 +501,7 @@ class ArtifactDownloadUrlResponse(BaseModel):
 
 class GuardRailsScopeUpsert(BaseModel):
     schema_version: int = 1
+    brief_system_prompt: str | None = None
     fields: dict[str, Any] = Field(default_factory=dict)
     topics: dict[str, Any] = Field(default_factory=dict)
 
@@ -509,6 +510,7 @@ class GuardRailsScopeResponse(BaseModel):
     domain: str
     scope_key: str
     schema_version: int
+    brief_system_prompt: str | None = None
     fields: dict[str, Any]
     topics: dict[str, Any]
     updated_at: datetime
@@ -541,6 +543,7 @@ class EffectiveGuardRailsResponse(BaseModel):
     applied_scopes: list[str]
     guardrails_version: str
     topic_hydrate_enabled: bool
+    brief_system_prompt: str = ""
 
 
 MeResponse.model_rebuild()

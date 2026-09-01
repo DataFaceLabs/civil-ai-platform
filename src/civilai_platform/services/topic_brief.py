@@ -120,6 +120,7 @@ def _invoke_topic_llm(
     context: ZoningBriefRequest,
     sections: list[dict[str, Any]],
     summary_only: bool,
+    system_prompt: str,
     data_client: DataProxyClient,
     llm_invoke: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -141,7 +142,7 @@ def _invoke_topic_llm(
 
     body = {
         "model_id": resolve_model_id("haiku"),
-        "system_prompt": _load_system_prompt(),
+        "system_prompt": system_prompt,
         "user_prompt": user_prompt,
         "field_context": {},
         "response_mode": "text",
@@ -299,7 +300,9 @@ def build_zoning_briefs(
         "state_abbr": request.state_abbr,
         "county_fips": request.county_fips,
         "topic_ids": topic_ids,
+        "effective_guardrails": effective.model_dump(),
     }
+    system_prompt = effective.brief_system_prompt.strip() or _load_system_prompt()
     retrieve_payload = data_client.retrieve_regtext(retrieve_body)
     corpus_status = str(retrieve_payload.get("corpus_status") or "")
     if corpus_status != "ready":
@@ -396,6 +399,7 @@ def build_zoning_briefs(
                 context=request,
                 sections=sections,
                 summary_only=summary_only,
+                system_prompt=system_prompt,
                 data_client=data_client,
                 llm_invoke=llm_invoke,
             )
