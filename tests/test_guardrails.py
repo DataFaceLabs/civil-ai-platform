@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -16,6 +17,8 @@ from civilai_platform.services.guardrails_merge import (
 )
 from civilai_platform.store import get_store
 from civilai_platform.store.memory import MemoryStore
+
+_TEST_SEED_DIR = Path(__file__).resolve().parent / "fixtures" / "facts_guardrails" / "zoning"
 
 
 @pytest.fixture(autouse=True)
@@ -70,7 +73,9 @@ def test_merge_most_specific_field_wins() -> None:
 
 
 def test_catalog_gate_strips_topic_hydrate_when_not_ready(store: MemoryStore) -> None:
-    guardrails_svc.seed_zoning_guardrails_from_yaml(store, refresh=True)
+    guardrails_svc.seed_zoning_guardrails_from_yaml(
+        store, seed_dir=_TEST_SEED_DIR, refresh=True
+    )
     gated = guardrails_svc.resolve_guardrails(
         store,
         state_abbr="WA",
@@ -93,7 +98,9 @@ def test_catalog_gate_strips_topic_hydrate_when_not_ready(store: MemoryStore) ->
 
 
 def test_seattle_seed_marks_ic_not_applicable(store: MemoryStore) -> None:
-    guardrails_svc.seed_zoning_guardrails_from_yaml(store, refresh=True)
+    guardrails_svc.seed_zoning_guardrails_from_yaml(
+        store, seed_dir=_TEST_SEED_DIR, refresh=True
+    )
     effective = guardrails_svc.resolve_guardrails(
         store,
         state_abbr="WA",
@@ -151,7 +158,9 @@ def test_admin_guardrails_crud(client: TestClient, store: MemoryStore) -> None:
 def test_resolve_requires_tenant_membership(client: TestClient, store: MemoryStore) -> None:
     from tests.seed import seed_tenant_member
 
-    guardrails_svc.seed_zoning_guardrails_from_yaml(store, refresh=True)
+    guardrails_svc.seed_zoning_guardrails_from_yaml(
+        store, seed_dir=_TEST_SEED_DIR, refresh=True
+    )
     tenant_id, _ = seed_tenant_member(
         store,
         user_id="gr-viewer",
@@ -172,7 +181,9 @@ def test_resolve_requires_tenant_membership(client: TestClient, store: MemorySto
 def test_resolve_catalog_ready_from_data_api(client: TestClient, store: MemoryStore) -> None:
     from tests.seed import seed_tenant_member
 
-    guardrails_svc.seed_zoning_guardrails_from_yaml(store, refresh=True)
+    guardrails_svc.seed_zoning_guardrails_from_yaml(
+        store, seed_dir=_TEST_SEED_DIR, refresh=True
+    )
     tenant_id, _ = seed_tenant_member(
         store,
         user_id="gr-viewer-2",

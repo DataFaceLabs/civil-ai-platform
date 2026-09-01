@@ -1,0 +1,22 @@
+domain: zoning
+scope_key: state:WA
+schema_version: 1
+topics:
+  height_far:
+    enabled: true
+    source_tier: [topic_hydrate]
+  setbacks_bulk:
+    enabled: true
+    source_tier: [topic_hydrate]
+  uses_density:
+    enabled: true
+    source_tier: [topic_hydrate]
+  landscaping:
+    enabled: true
+    source_tier: [topic_hydrate, topic_summary]
+  overlay_modifiers:
+    enabled: true
+    source_tier: [topic_hydrate, topic_summary]
+  affordability_mha:
+    enabled: true
+    source_tier: [topic_hydrate, topic_summary]

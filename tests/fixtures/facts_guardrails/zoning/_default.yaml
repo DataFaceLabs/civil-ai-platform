@@ -1,0 +1,71 @@
+domain: zoning
+scope_key: _default
+schema_version: 1
+fields:
+  ZONING_REGS:
+    source_tier: [lake]
+    citation_required: false
+    llm_extract_allowed: false
+  MAX_BUILDING_HEIGHT:
+    source_tier: [lake, dsi]
+    citation_required: true
+    llm_extract_allowed: false
+  SETBACKS:
+    source_tier: [lake, dsi]
+    citation_required: true
+    llm_extract_allowed: false
+  MAX_BUILDING_COVERAGE:
+    source_tier: [lake, dsi]
+    citation_required: true
+    llm_extract_allowed: false
+  MIN_LOT_SIZE:
+    source_tier: [lake, dsi]
+    citation_required: true
+    llm_extract_allowed: false
+  MIN_LOT_WIDTH:
+    source_tier: [lake, dsi]
+    citation_required: true
+    llm_extract_allowed: false
+  IMPERVIOUS_COVER_LIMIT:
+    source_tier: [lake, dsi, topic_hydrate]
+    citation_required: true
+    llm_extract_allowed: true
+  IMPERVIOUS_REGS:
+    source_tier: [lake, topic_hydrate, topic_summary]
+    citation_required: false
+    llm_extract_allowed: true
+  COMPATIBILITY_STDS:
+    source_tier: [lake, topic_summary]
+    citation_required: false
+    llm_extract_allowed: true
+topics:
+  district_identity:
+    enabled: true
+    source_tier: [topic_summary]
+  height_far:
+    enabled: false
+    source_tier: [topic_hydrate]
+  setbacks_bulk:
+    enabled: false
+    source_tier: [topic_hydrate]
+  uses_density:
+    enabled: false
+    source_tier: [topic_hydrate]
+  parking_access:
+    enabled: false
+    source_tier: [topic_summary]
+  landscaping:
+    enabled: false
+    source_tier: [topic_hydrate, topic_summary]
+  overlay_modifiers:
+    enabled: false
+    source_tier: [topic_hydrate, topic_summary]
+  affordability_mha:
+    enabled: false
+    source_tier: [topic_hydrate, topic_summary]
+  shoreline:
+    enabled: false
+    source_tier: [topic_summary]
+  design_historic:
+    enabled: false
+    source_tier: [topic_summary]
