@@ -8,9 +8,33 @@ from typing import Any
 
 import yaml
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_PROMPTS_DIR = _REPO_ROOT / "prompts"
-_MANIFEST_PATH = _PROMPTS_DIR / "section_prompt_manifest.yaml"
+_MANIFEST_NAME = "section_prompt_manifest.yaml"
+
+
+def resolve_prompts_dir(start: Path | None = None) -> Path:
+    """Locate ``prompts/`` in a repo checkout or a Lambda zip.
+
+    Local layout: ``civil-ai-platform/src/civilai_platform/prompt_catalog.py``
+    → repo root ``prompts/``.
+
+    Lambda layout: ``/var/task/civilai_platform/prompt_catalog.py`` plus
+    ``/var/task/prompts/`` (copied by ``scripts/package-lambda.sh``). Using
+    ``parents[2]`` here resolves to ``/var/prompts``, which does not exist.
+    """
+    here = (start or Path(__file__)).resolve()
+    candidates = (
+        here.parents[2] / "prompts",
+        here.parents[1] / "prompts",
+    )
+    for path in candidates:
+        if (path / _MANIFEST_NAME).is_file():
+            return path
+    looked = ", ".join(str(path) for path in candidates)
+    raise FileNotFoundError(f"Prompt catalog manifest not found; looked in: {looked}")
+
+
+_PROMPTS_DIR = resolve_prompts_dir()
+_MANIFEST_PATH = _PROMPTS_DIR / _MANIFEST_NAME
 
 
 def prompts_dir() -> Path:
