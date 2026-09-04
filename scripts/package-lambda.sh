@@ -22,6 +22,11 @@ cp -R src/civilai_platform "$BUILD_DIR/"
 git rev-parse HEAD > "$BUILD_DIR/civilai_platform/_git_sha.txt"
 # Word-native export skins are runtime assets, not Python package data in the source tree.
 cp -R assets "$BUILD_DIR/"
+# Prompt Lab catalog — lives next to the task root in Lambda (/var/task/prompts).
+# prompt_catalog.py also accepts the local repo layout (../prompts from src/).
+if [ -d "$ROOT/prompts" ]; then
+  cp -R "$ROOT/prompts" "$BUILD_DIR/"
+fi
 # Vendor civilai-agent (editable dep) — minimal copy for Lambda
 if [ -d "../civil-ai-agent/src/civilai_agent" ]; then
   cp -R ../civil-ai-agent/src/civilai_agent "$BUILD_DIR/"
