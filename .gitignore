@@ -1,3 +1,8 @@
 .local/
 infra/dist/
 assets/templates/_spike_output_*.docx
+
+# Python bytecode. These were tracked until 2026-09-07, which made every
+# interpreter run show up as 37 modified files and buried real changes.
+__pycache__/
+*.py[cod]
