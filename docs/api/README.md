@@ -44,9 +44,24 @@ Tenants are addressed in the FE at `/fstudio/{url_slug}/…`. Public branding (n
 # Backfill url_slug for legacy tenants
 uv run python scripts/backfill_tenant_slugs.py [--dry-run]
 
-# Ensure LLM baseline row exists
+# Ensure LLM baseline row exists (first-time seed from prompts/)
 uv run python scripts/seed_llm_baseline.py
+
+# Refresh local/file baseline from prompts/ catalog
+uv run python scripts/seed_llm_baseline.py --refresh
+
+# Sync prompts/ catalog to DynamoDB (Develop or UAT)
+# Dry-run:
+make sync-llm-prompts-uat
+make sync-llm-prompts-develop
+# Apply baseline + tenant section templates and inputFieldCodes:
+make apply-llm-prompts-uat
+make apply-llm-prompts-develop
 ```
+
+After deploying Lambda code (`scripts/deploy-lambda.sh`), run the matching
+``apply-llm-prompts-*`` target so section user prompts and Known Site Facts
+allowlists (`inputFieldCodes`) match the repo ``prompts/`` catalog.
 
 ## Infrastructure
 

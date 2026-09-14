@@ -1,27 +1,33 @@
-You are drafting the "Parcel" portion of a real estate feasibility report for a civil engineering/land development consultant in Texas. Write in formal, concise third-person prose matching a professional feasibility study: short numbered subsections, no marketing language, and a citation for every regulation or record you state (map exhibit, recording instrument, volume/page, or document number). 
+You are drafting the "Parcel" portion of a land development feasibility report as a civil engineering/land development consultant. Write in formal, concise third-person prose matching a professional feasibility study: no marketing language, and a citation for every regulation or record you state (map exhibit, recording instrument, volume/page, or document number). 
 
 Parcel inputs:
-- Site address / location:{{field.PROPERTY_ADDRESS}}
-- Site characteristics: size:{{field.PROPERTY_ACRES}} , existing land use:{{field.CAD_LAND_USE}}, {{field.EXISTING_DEVELOPMENT}}
-- Proposed development: {{field.PROPOSED_DEVELOPMENT}}
-- County and city jurisdiction / ETJ status: {{field.GOVERNING_JURIS}}
-- Legal description(s):{{field.CAD_LEGAL_DESCRIPTION}}
-- Permitting authority: {{field.PERMITTING_AUTHORITY_DETAIL}}
-- Fire code jurisdiction:{{field.IFC_EDITION}}
-- Land development code jurisdiction:{{field.LDC_REFERENCE}}
-- Compliance risk: {{field.COMPLIANCE_RISK}}
-- Historic preservation status:{{field.HISTORIC_DESIGNATION}}
-- Protected status areas: {{field.PROTECTED_AREA_STATUS}}
+Property address: {{field.PROPERTY_ADDRESS}}
+Property acres: {{field.PROPERTY_ACRES}}
+Existing Land Use: {{field.CAD_LAND_USE}}
+Existing Development: {{field.EXISTING_DEVELOPMENT}}
+Proposed development: {{field.PROPOSED_DEVELOPMENT}}
+CAD info: {{field.CAD_INFO}}
+CAD valuation: {{field.CAD_VALUATION}}
+Legal description: {{field.CAD_LEGAL_DESCRIPTION}}
+Year built: {{field.CAD_YEAR_BUILT}}
+Deed reference: {{field.CAD_DEED_REFERENCE}}
+Building detail: {{field.BUILDING_DETAIL}}
+CAD discrepancies: {{field.CAD_DISCREPANCIES}}
+Adjacent properties: {{field.ADJACENT_PROPS}}
+Site topography: {{field.SITE_TOPOGRAPHY}}
+Compliance risk: {{field.COMPLIANCE_RISK}}
+Protected area status: {{field.PROTECTED_AREA_STATUS}}
+Historic designation: {{field.HISTORIC_DESIGNATION}}
 
 Only state facts supported by the inputs above that are not empty. Do not create subsection if inputs do not exist for them. Produce the following subsections, in order:
 
-Platting status — Name the current owner(s) and cite the recording instrument for eachtract. State whether the property is platted, unplatted, or has a platting history(first platted / replatted / amended, with years). List each tract's legal description under a "Legal Descriptions" subheading.
+Platting status — Name the current owner(s) and cite the recording instrument for each tract. State the legal description for the tract. Mention whether the property is platted, unplatted, or has a platting history (first platted / replatted / amended, with years).
 
-Site characteristics — Describe the site characteristics in detail, including the size, existing land use, and any other relevant characteristics.
+Site characteristics — Describe the site characteristics in detail, including the size, existing land use, and any other relevant characteristics. 
 
-Proposed development — Describe the proposed development in detail, including the proposed land use, building type, and any other relevant characteristics.
+Proposed development — Describe the proposed development in detail, including the proposed land use, building type, and any other relevant characteristics. Describe jurisdiction change notes the report is based on if one exist: {{field.JURISDICTION_STATUS}}
 
-Compliance risk — Describe the compliance risk in detail, including the compliance risk score, the compliance risk factors, and the compliance risk mitigation strategies.
+Compliance risk — Describe the compliance risk in detail, explain the compliance risk score, the compliance risk factors, and the compliance risk mitigation strategies.
 
 Historic preservation status — describe the historic preservation status in detail, including the historic preservation status score, the historic preservation status factors, and the historic preservation status mitigation strategies.
 

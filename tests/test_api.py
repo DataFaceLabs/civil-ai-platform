@@ -306,7 +306,7 @@ def test_project_state_round_trips_field_provenance_and_site_payload(client: Tes
     patch = client.patch(f"/v1/projects/{project_id}/state", json=patch_body, headers=h)
     assert patch.status_code == 200
     body = patch.json()
-    # site_payload field views are slimmed before DynamoDB write; sections are authoritative.
+    # site_payload is slimmed for DynamoDB — section fields are authoritative.
     assert body["site_payload"] is None
 
     address_field = body["sections"][0]["fields"]["PROPERTY_ADDRESS"]

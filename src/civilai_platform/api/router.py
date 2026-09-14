@@ -7,10 +7,12 @@ from civilai_platform.api.routes import (
     core,
     data_proxy,
     exports,
+    guardrails,
     llm,
     projects,
     public,
     users,
+    zoning,
 )
 
 api_router = APIRouter()
@@ -24,3 +26,5 @@ api_router.include_router(projects.router)
 api_router.include_router(agent_runs.router)
 api_router.include_router(exports.router)
 api_router.include_router(data_proxy.router)
+api_router.include_router(guardrails.router)
+api_router.include_router(zoning.router)

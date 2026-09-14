@@ -1,0 +1,38 @@
+#!/bin/sh
+# Refuse commits that land somewhere they cannot be reviewed from.
+#
+# Two failures this guards against, both of which have happened in this workspace:
+#   - commits made directly on develop/main/release, bypassing review
+#   - commits made on a detached HEAD, which become unreachable once the checkout
+#     moves; 32 King County reference manifests were stranded this way in a
+#     detached worktree between 2026-08-16 and 2026-09-07
+#
+# Deliberate exception: CIVIL_ALLOW_PROTECTED=1 git commit ...
+
+[ "$CIVIL_ALLOW_PROTECTED" = "1" ] && exit 0
+
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+case "$branch" in
+  HEAD)
+    echo "" >&2
+    echo "  BLOCKED: refusing to commit on a DETACHED HEAD." >&2
+    echo "  Commits here become unreachable as soon as the checkout moves." >&2
+    echo "" >&2
+    echo "    git switch -c feature/<spec-id>-<slug>   # name it, then commit" >&2
+    echo "" >&2
+    exit 1
+    ;;
+  develop|main|master|release/*)
+    echo "" >&2
+    echo "  BLOCKED: refusing to commit directly on '$branch'." >&2
+    echo "  Work belongs on a branch off develop so it can be reviewed." >&2
+    echo "" >&2
+    echo "    git switch -c feature/<spec-id>-<slug>       # move this work" >&2
+    echo "    CIVIL_ALLOW_PROTECTED=1 git commit ...       # deliberate exception" >&2
+    echo "" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

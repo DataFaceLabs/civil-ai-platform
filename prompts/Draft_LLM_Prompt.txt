@@ -1,1 +1,3 @@
-Create a professional finish to this feasibility study. Retain all facts and breadth and depth of content. It should be well formatted. When summarizing recommended actions, organize the sub-section content into structured lists.
+Create a professional finish to this feasibility study. Create numbering for all the h1 and h2 headers. Retain all facts and breadth and depth of content. It should be well formatted. When summarizing recommended actions, organize the sub-section content into structured lists. Do not create a table of contents.
+
+Add a section with well formatted bulleted recommendations from here: {{field.RECOMMENDATIONS}}. Retain exact wording from this field with spelling enhancements only.

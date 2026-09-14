@@ -146,10 +146,10 @@ def test_section_draft_resolves_prompt_lab_config_before_agent(client: TestClien
     assert run.status_code == 201
     body = run.json()
     assert body["status"] == "succeeded"
-    assert "Review known zoning facts" in body["request"]
+    assert 'You are drafting the "Zoning" portion' in body["request"]
     assert "MF-4 permits multifamily uses." in body["request"]
     assert "Generate the zoning section draft." not in body["request"]
-    assert "Review known zoning facts" in body["message"]
+    assert 'You are drafting the "Zoning" portion' in body["message"]
     field_context = body["trace_summary"]["field_context"]
     assert field_context["ZONING_REGS"] == "MF-4 permits multifamily uses."
     assert field_context["PLATTING_STATUS"] == "Platted"

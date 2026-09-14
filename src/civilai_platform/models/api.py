@@ -499,4 +499,51 @@ class ArtifactDownloadUrlResponse(BaseModel):
     expires_in: int
 
 
+class GuardRailsScopeUpsert(BaseModel):
+    schema_version: int = 1
+    brief_system_prompt: str | None = None
+    fields: dict[str, Any] = Field(default_factory=dict)
+    topics: dict[str, Any] = Field(default_factory=dict)
+
+
+class GuardRailsScopeResponse(BaseModel):
+    domain: str
+    scope_key: str
+    schema_version: int
+    brief_system_prompt: str | None = None
+    fields: dict[str, Any]
+    topics: dict[str, Any]
+    updated_at: datetime
+    updated_by_user_id: str | None = None
+
+
+class GuardRailsScopeListResponse(BaseModel):
+    scopes: list[GuardRailsScopeResponse]
+    guardrails_version: str | None = None
+    version_updated_at: datetime | None = None
+
+
+class GuardRailsAuditEventResponse(BaseModel):
+    event_id: str
+    actor_user_id: str
+    action: str
+    resource_id: str
+    detail: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class GuardRailsAuditListResponse(BaseModel):
+    events: list[GuardRailsAuditEventResponse]
+
+
+class EffectiveGuardRailsResponse(BaseModel):
+    domain: str
+    fields: dict[str, Any]
+    topics: dict[str, Any]
+    applied_scopes: list[str]
+    guardrails_version: str
+    topic_hydrate_enabled: bool
+    brief_system_prompt: str = ""
+
+
 MeResponse.model_rebuild()

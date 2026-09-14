@@ -6,6 +6,8 @@ from civilai_platform.models.entities import (
     AuditEvent,
     Client,
     ExportJob,
+    GuardRailsScopeRecord,
+    GuardRailsVersionMeta,
     LlmBaselineTemplate,
     LlmInvokeJob,
     Project,
@@ -176,3 +178,22 @@ class PlatformStore(ABC):
 
     @abstractmethod
     def get_llm_invoke_job(self, tenant_id: str, job_id: str) -> LlmInvokeJob | None: ...
+
+    # --- Facts Guard Rails (zoning v1) ---
+    @abstractmethod
+    def get_guardrails_scope(self, domain: str, scope_key: str) -> GuardRailsScopeRecord | None: ...
+
+    @abstractmethod
+    def put_guardrails_scope(self, record: GuardRailsScopeRecord) -> None: ...
+
+    @abstractmethod
+    def delete_guardrails_scope(self, domain: str, scope_key: str) -> None: ...
+
+    @abstractmethod
+    def list_guardrails_scopes(self, domain: str) -> list[GuardRailsScopeRecord]: ...
+
+    @abstractmethod
+    def get_guardrails_version_meta(self, domain: str) -> GuardRailsVersionMeta | None: ...
+
+    @abstractmethod
+    def put_guardrails_version_meta(self, meta: GuardRailsVersionMeta) -> None: ...
